@@ -31,8 +31,11 @@
   <!-- 关卡横幅（动态插入） -->
   <div id="levelBanner" class="hidden"></div>
 
-  <!-- 骑马面板（动态插入） -->
-  <div id="riderPanel" class="hidden"></div>
+  <!-- 骑马面板（可拖拽，默认收起） -->
+  <div id="riderPanel" class="collapsed">
+    <div id="rpHandle" class="rp-handle">🐴</div>
+    <div class="rp-body"></div>
+  </div>
 
   <!-- 主画布 -->
   <canvas id="cv"></canvas>

@@ -64,12 +64,12 @@ const UNITS = {
 };
 
 const COMBO_INFO = {
-  '唐僧': { desc: '唐僧成型：持续治疗心与全体友军', color: '#d09b35' },
-  '悟空': { desc: '悟空成型：金箍棒范围重击', color: '#d97827' },
-  '八戒': { desc: '八戒成型：近战扇形横扫', color: '#4786b7' },
-  '沙僧': { desc: '沙僧成型：为相邻单位分担伤害', color: '#4e9b68' },
-  '子牙': { desc: '姜子牙成型：封神榜·减速全场敌人', color: '#d97827' },
-  '公豹': { desc: '申公豹成型：魔化·召唤小妖怪', color: '#9333ea' },
+  '唐僧': { desc: '唐僧·慈悲为怀：持续治疗+佛光普照大招', color: '#ffd700' },
+  '悟空': { desc: '悟空·大闹天宫：金箍棒横扫+击飞', color: '#ff8c00' },
+  '八戒': { desc: '八戒·食色性也：扇形横扫+吸血+狂暴', color: '#4682b4' },
+  '沙僧': { desc: '沙僧·金身罗汉：分担伤害+死亡爆炸', color: '#2e8b57' },
+  '子牙': { desc: '子牙·封神榜：全场减速+打神鞭定身', color: '#daa520' },
+  '公豹': { desc: '公豹·截教天阵：召唤魔物+自爆', color: '#8b008b' },
 };
 const COMBO_PAIRS = [['唐','僧'], ['悟','空'], ['八','戒'], ['沙','僧'], ['姜','牙'], ['申','豹']];
 
@@ -199,17 +199,21 @@ function recompute() {
 
 function makeUnit(ch) {
   const d = UNITS[ch];
-  return { ch, lv: 1, hp: d.hp, maxHp: d.hp, cd: 0, healT: 0, combo: false, partner: -1, aura: 1, dead: false, rallyBuff: 0 };
+  return { ch, lv: 1, hp: d.hp, maxHp: d.hp, cd: 0, healT: 0, combo: false, partner: -1, aura: 1, dead: false, rallyBuff: 0,
+    comboSkillCd: 0, comboSkillT: 0, comboCharge: 0 };
 }
 
 function effStat(u) {
   const d = UNITS[u.ch];
   const m = Math.pow(1.5, u.lv - 1);
   let atk = d.atk * m, range = d.range, aspd = d.aspd * u.aura, splash = 0;
-  if (u.rallyBuff > 0) aspd *= 1.4; // 集结号角：攻速+40%
-  if (u.combo && (u.ch === '悟' || u.ch === '空')) { atk = 24 * m; range = 3; aspd = 1.25 * u.aura; splash = 70; }
-  if (u.combo && (u.ch === '八' || u.ch === '戒')) { atk = 30 * m; range = 1; aspd = 1.1 * u.aura; splash = 35; }
-  if (u.rallyBuff > 0 && u.combo) { aspd *= 1.4; } // 组词单位也享受集结
+  if (u.rallyBuff > 0) aspd *= 1.4;
+  if (u.combo && (u.ch === '悟' || u.ch === '空')) { atk = 22 * m; range = 3; aspd = 1.15 * u.aura; splash = 60; }
+  if (u.combo && (u.ch === '八' || u.ch === '戒')) { atk = 26 * m; range = 1; aspd = 1.0 * u.aura; splash = 30; }
+  if (u.combo && (u.ch === '姜' || u.ch === '牙')) { atk = 14 * m; range = 4; aspd = 0.9 * u.aura; }
+  if (u.combo && (u.ch === '申' || u.ch === '豹')) { atk = 16 * m; range = 2; aspd = 0.95 * u.aura; }
+  if (u.combo && (u.ch === '沙')) { atk = 8 * m; range = 2; aspd = 0.8 * u.aura; }
+  if (u.rallyBuff > 0 && u.combo) { aspd *= 1.4; }
   return { atk, range, aspd, splash };
 }
 
@@ -509,25 +513,159 @@ function updateBattle(dt) {
   // 静态单位行动
   S.cells.forEach(cell => {
     const u = cell.unit; if (!u) return;
-    // 集结号角增益计时
     if (u.rallyBuff > 0) u.rallyBuff -= sdt;
+    if (u.comboSkillCd > 0) u.comboSkillCd -= sdt;
+    if (u.comboSkillT > 0) u.comboSkillT -= sdt;
     const st = effStat(u);
-    if (u.combo && (u.ch === '唐' || u.ch === '僧')) {
+    const comboName = u.combo ? UNITS[u.ch].combo : null;
+
+    // ===== 唐僧：慈悲为怀（持续治疗）+ 佛光普照（大招） =====
+    if (comboName === '唐僧') {
       u.healT -= sdt;
       if (u.healT <= 0) {
         u.healT = 1.4;
-        const amt = 4 * Math.pow(1.5, u.lv - 1);
+        const amt = 3 * Math.pow(1.5, u.lv - 1);
         S.heartHp = Math.min(S.heartMax, S.heartHp + amt);
         S.cells.forEach(c2 => { if (c2.unit) c2.unit.hp = Math.min(unitMaxHp(c2.unit), c2.unit.hp + amt); });
-        S.fx.push({ type: 'heal', x: cell.px, y: cell.py, t: 0 });
+        S.fx.push({ type: 'combo_heal', x: cell.px, y: cell.py, t: 0, r: S.cellSize * 0.6, dur: 0.6 });
+      }
+      // 佛光普照大招：每7秒一次
+      if (u.comboSkillCd <= 0) {
+        u.comboSkillCd = 7.0;
+        u.comboSkillT = 1.0;
+        const bigAmt = 12 * Math.pow(1.5, u.lv - 1);
+        S.heartHp = Math.min(S.heartMax, S.heartHp + bigAmt);
+        S.cells.forEach(c2 => {
+          if (c2.unit) {
+            c2.unit.hp = Math.min(unitMaxHp(c2.unit), c2.unit.hp + bigAmt);
+            c2.unit.shield = Math.max(c2.unit.shield || 0, bigAmt * 0.5);
+            S.fx.push({ type: 'combo_buddha', x: c2.px, y: c2.py, t: 0, dur: 0.8 });
+          }
+        });
+        S.fx.push({ type: 'combo_buddha_big', x: S.heartX, y: S.heartY, t: 0, r: S.cellSize * 3, dur: 1.2 });
+        S.floats.push({ x: cell.px, y: cell.py - 30, t: 0, txt: '☀️佛光普照!', color: '#ffd700', big: true });
+        S.shake = Math.max(S.shake, 4);
+      }
+      return; // 唐僧不攻击
+    }
+
+    // ===== 沙僧：金身罗汉（分担伤害）+ 卷帘大将（死亡爆炸） =====
+    if (comboName === '沙僧') {
+      // 为相邻单位分担30%伤害（被动，在敌人攻击时处理）
+      // 自身减伤20%
+      // 死亡时爆炸眩晕（在单位死亡时处理）
+    }
+
+    // ===== 子牙：封神榜（全场减速）+ 打神鞭（定身大招） =====
+    if (comboName === '子牙') {
+      // 被动：全场敌人减速30%（在敌人移动时处理）
+      S.enemies.forEach(e => {
+        if (e.dead) return;
+        e.jiangSlow = Math.max(e.jiangSlow || 0, 0.1);
+      });
+      // 打神鞭大招：每8秒，对所有敌人造成伤害+定身1.5秒
+      if (u.comboSkillCd <= 0 && S.enemies.length > 0) {
+        u.comboSkillCd = 8.0;
+        u.comboSkillT = 0.8;
+        const whipDmg = st.atk * 2.5;
+        S.enemies.forEach(e => {
+          if (e.dead) return;
+          e.hp -= whipDmg;
+          e.root = Math.max(e.root || 0, 1.5);
+          S.floats.push({ x: e.x, y: e.y - 16, t: 0, txt: '⚡' + Math.round(whipDmg), color: '#daa520' });
+          S.fx.push({ type: 'combo_whip', x: e.x, y: e.y, t: 0, dur: 0.5 });
+        });
+        S.fx.push({ type: 'combo_whip_big', x: S.heartX, y: S.heartY, t: 0, r: Math.max(W, H), dur: 0.8 });
+        S.floats.push({ x: cell.px, y: cell.py - 30, t: 0, txt: '📜打神鞭!', color: '#daa520', big: true });
+        S.shake = Math.max(S.shake, 6);
       }
     }
+
+    // ===== 公豹：截教天阵（召唤魔物）+ 魔化自爆 =====
+    if (comboName === '公豹') {
+      // 每6秒召唤一个小魔物
+      if (u.comboSkillCd <= 0) {
+        u.comboSkillCd = 6.0;
+        u.comboSkillT = 0.5;
+        const summon = {
+          ch: '魔', x: cell.px + (Math.random() - 0.5) * 40, y: cell.py + S.cellSize * 0.3,
+          hp: 30 * Math.pow(1.5, u.lv - 1), maxHp: 30 * Math.pow(1.5, u.lv - 1),
+          spd: 55, atk: 8 * Math.pow(1.5, u.lv - 1), r: 12, cd: 0,
+          boss: false, elite: false, dead: false,
+          friendly: true, lifetime: 10, explodeDmg: st.atk * 2.2,
+        };
+        if (!S.friendlies) S.friendlies = [];
+        S.friendlies.push(summon);
+        S.fx.push({ type: 'combo_summon', x: summon.x, y: summon.y, t: 0, dur: 0.6 });
+        S.floats.push({ x: cell.px, y: cell.py - 28, t: 0, txt: '👿召唤!', color: '#8b008b', big: true });
+      }
+    }
+
     if (st.atk <= 0 || st.aspd <= 0) return;
     u.cd -= sdt;
     if (u.cd > 0) return;
     const tg = unitTarget(cell, st.range);
     if (!tg) return;
     u.cd = 1 / st.aspd;
+
+    // ===== 悟空：大闹天宫（概率触发金箍棒横扫+击飞） =====
+    if (comboName === '悟空' && Math.random() < 0.25) {
+      u.comboSkillT = 0.4;
+      const smashDmg = st.atk * 1.8;
+      const smashR = S.cellSize * 1.4;
+      S.enemies.forEach(e => {
+        if (e.dead) return;
+        const d = dist(e.x, e.y, tg.x, tg.y);
+        if (d < smashR) {
+          e.hp -= smashDmg * (1 - d / smashR * 0.4);
+          e.knockback = 0.4;
+          e.knockbackX = (e.x - tg.x) * 0.5;
+          e.knockbackY = (e.y - tg.y) * 0.5;
+          S.floats.push({ x: e.x, y: e.y - 14, t: 0, txt: '🍭' + Math.round(smashDmg), color: '#ff8c00' });
+        }
+      });
+      S.fx.push({ type: 'combo_monkey', x: tg.x, y: tg.y, t: 0, r: smashR, dur: 0.5 });
+      S.shake = Math.max(S.shake, 5);
+      S.floats.push({ x: cell.px, y: cell.py - 28, t: 0, txt: '🐵大闹天宫!', color: '#ff8c00', big: true });
+    }
+
+    // ===== 八戒：食色性也（扇形横扫+吸血+低血量狂暴） =====
+    if (comboName === '八戒') {
+      const lowHp = u.hp / unitMaxHp(u) < 0.4;
+      const berserkMul = lowHp ? 1.5 : 1;
+      const fanDmg = st.atk * 1.3 * berserkMul;
+      const fanAngle = Math.PI * 0.7;
+      // 找朝向
+      const ang = Math.atan2(tg.y - cell.py, tg.x - cell.px);
+      let hit = 0, totalDmg = 0;
+      S.enemies.forEach(e => {
+        if (e.dead) return;
+        const d = dist(e.x, e.y, cell.px, cell.py);
+        if (d < S.cellSize * 1.5) {
+          const ea = Math.atan2(e.y - cell.py, e.x - cell.px);
+          let diff = Math.abs(ea - ang);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < fanAngle / 2) {
+            e.hp -= fanDmg;
+            hit++;
+            totalDmg += fanDmg;
+            S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '🥬' + Math.round(fanDmg), color: '#4682b4' });
+          }
+        }
+      });
+      // 吸血：回复造成伤害的25%
+      if (hit > 0) {
+        const heal = totalDmg * 0.25;
+        u.hp = Math.min(unitMaxHp(u), u.hp + heal);
+        S.fx.push({ type: 'combo_pig', x: cell.px, y: cell.py, t: 0, ang: ang, r: S.cellSize * 1.5, dur: 0.4 });
+        if (lowHp) {
+          S.floats.push({ x: cell.px, y: cell.py - 26, t: 0, txt: '🐷狂暴!', color: '#ff4444', big: true });
+        }
+      }
+      return; // 八戒用扇形攻击代替普通攻击
+    }
+
+    // 普通攻击
     if (st.range > 1) {
       S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: u.combo ? '#ffb84f' : UNITS[u.ch].color });
     } else {
@@ -560,6 +698,7 @@ function updateBattle(dt) {
   // 骑马单位更新
   if (S.riders && S.riders.length > 0) {
     updateRiders(sdt);
+    if (window.updateFireTrails) updateFireTrails(sdt);
   }
 
   // 镜像单位更新
@@ -567,9 +706,68 @@ function updateBattle(dt) {
     updateMirrors(sdt);
   }
 
+  // 公豹召唤的友军单位
+  if (S.friendlies && S.friendlies.length > 0) {
+    for (let i = S.friendlies.length - 1; i >= 0; i--) {
+      const f = S.friendlies[i];
+      if (f.dead) { S.friendlies.splice(i, 1); continue; }
+      f.lifetime -= sdt;
+      if (f.lifetime <= 0) {
+        // 自爆
+        const er = S.cellSize * 1.5;
+        S.enemies.forEach(e => {
+          if (e.dead) return;
+          if (dist(e.x, e.y, f.x, f.y) < er) {
+            e.hp -= f.explodeDmg || 20;
+            S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '💥' + Math.round(f.explodeDmg || 20), color: '#8b008b' });
+          }
+        });
+        S.fx.push({ type: 'combo_explode', x: f.x, y: f.y, t: 0, r: er, dur: 0.5 });
+        f.dead = true;
+        continue;
+      }
+      // 找最近的敌人
+      let best = null, bestDist = Infinity;
+      S.enemies.forEach(e => {
+        if (e.dead) return;
+        const d = dist(e.x, e.y, f.x, f.y);
+        if (d < bestDist) { bestDist = d; best = e; }
+      });
+      if (best) {
+        if (bestDist > f.r + 8) {
+          const k = (f.spd * sdt) / bestDist;
+          f.x += (best.x - f.x) * k;
+          f.y += (best.y - f.y) * k;
+        } else {
+          f.cd -= sdt;
+          if (f.cd <= 0) {
+            f.cd = 1;
+            best.hp -= f.atk;
+            S.floats.push({ x: best.x, y: best.y - 10, t: 0, txt: '-' + f.atk, color: '#9333ea' });
+            S.fx.push({ type: 'slash', x: best.x, y: best.y, t: 0 });
+          }
+        }
+      }
+    }
+  }
+
   // 敌人移动/攻击
   for (const e of S.enemies) {
     if (e.dead) continue;
+    if (e.jiangSlow > 0) e.jiangSlow -= sdt;
+    if (e.root > 0) e.root -= sdt;
+    if (e.knockback > 0) {
+      e.knockback -= sdt;
+      e.x += (e.knockbackX || 0) * sdt * 3;
+      e.y += (e.knockbackY || 0) * sdt * 3;
+    }
+    if (e.stun > 0) { e.stun -= sdt; continue; }
+    if (e.burning > 0) e.burning -= sdt;
+
+    let spdMul = 1;
+    if (e.jiangSlow > 0) spdMul *= 0.65;
+    if (e.root > 0) spdMul = 0;
+
     let tgx = S.heartX, tgy = S.heartY, tgCell = null, bd = dist(e.x, e.y, S.heartX, S.heartY);
     for (const c of S.cells) {
       if (!c.unit) continue;
@@ -578,16 +776,43 @@ function updateBattle(dt) {
     }
     const reach = tgCell ? S.cellSize * 0.55 + e.r : S.cellSize * 0.45 + e.r;
     if (bd > reach) {
-      const k = (e.spd * sdt) / bd;
+      const k = (e.spd * spdMul * sdt) / bd;
       e.x += (tgx - e.x) * k; e.y += (tgy - e.y) * k;
     } else {
       e.cd -= sdt;
       if (e.cd <= 0) {
         e.cd = 1;
         if (tgCell) {
-          tgCell.unit.hp -= e.atk;
-          S.floats.push({ x: tgCell.px, y: tgCell.py + 10, t: 0, txt: '-' + Math.round(e.atk), color: '#ff9a9a' });
+          let dmg = e.atk;
+          const shaCell = S.cells.find(c => c.unit && c.unit.combo && UNITS[c.unit.ch].combo === '沙僧' && adjacent(c, tgCell));
+          if (shaCell) {
+            const share = dmg * 0.3;
+            dmg *= 0.7;
+            shaCell.unit.hp -= share * 0.5;
+            S.floats.push({ x: shaCell.px, y: shaCell.py + 8, t: 0, txt: '-' + Math.round(share * 0.5), color: '#2e8b57' });
+          }
+          if (tgCell.unit.shield && tgCell.unit.shield > 0) {
+            const sa = Math.min(tgCell.unit.shield, dmg);
+            tgCell.unit.shield -= sa;
+            dmg -= sa;
+            if (sa > 0) S.floats.push({ x: tgCell.px, y: tgCell.py - 4, t: 0, txt: '🛡️' + Math.round(sa), color: '#88ddff' });
+          }
+          tgCell.unit.hp -= dmg;
+          S.floats.push({ x: tgCell.px, y: tgCell.py + 10, t: 0, txt: '-' + Math.round(dmg), color: '#ff9a9a' });
           if (tgCell.unit.hp <= 0) {
+            if (tgCell.unit.combo && UNITS[tgCell.unit.ch].combo === '沙僧') {
+              const ed = 20 * Math.pow(1.5, tgCell.unit.lv - 1);
+              S.enemies.forEach(e2 => {
+                if (e2.dead) return;
+                if (dist(e2.x, e2.y, tgCell.px, tgCell.py) < S.cellSize * 1.8) {
+                  e2.hp -= ed;
+                  e2.stun = Math.max(e2.stun || 0, 1.0);
+                  S.floats.push({ x: e2.x, y: e2.y - 12, t: 0, txt: '💥' + Math.round(ed), color: '#2e8b57' });
+                }
+              });
+              S.fx.push({ type: 'combo_sha_explode', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize * 1.8, dur: 0.7 });
+              S.shake = Math.max(S.shake, 8);
+            }
             S.fx.push({ type: 'ring', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize/2, color: '#ff6a6a' });
             tgCell.unit = null; recompute();
           }
@@ -613,19 +838,23 @@ function updateBattle(dt) {
 // （makeRider / updateRiders / doRiderAttack / drawRiders 在 mobile.js 中定义）
 
 /* ============ 骑马面板 ============ */
+let _riderPanelDrag = { dragging: false, startX: 0, startY: 0, startRight: 0, startBottom: 0, moved: false };
+
 function updateRiderPanel() {
   const panel = $('riderPanel');
   if (!panel) return;
-  if (!S.riders || S.riders.length === 0) { panel.classList.add('hidden'); return; }
-  panel.classList.remove('hidden');
+  if (!S.riders || S.riders.length === 0) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
   const r = S.riders[0];
   const SK = window.RIDER_SKILLS || RIDER_SKILLS;
-  let html = `<div class="rp-title">🐴 骑术面板</div>`;
-  html += `<div class="rp-row"><span class="rp-label">等级</span><span class="rp-val">Lv${r.level}</span></div>`;
+  const body = panel.querySelector('.rp-body');
+  if (!body) return;
+  let html = `<div class="rp-title">🐴 骑术面板 · Lv${r.level}</div>`;
   html += `<div class="rp-row"><span class="rp-label">HP</span><span class="rp-val">${Math.ceil(r.hp)}/${Math.ceil(r.maxHp)}</span></div>`;
   html += `<div class="rp-row"><span class="rp-label">攻击</span><span class="rp-val">${Math.round(r.atk)}${r.buffs&&r.buffs.berserk>0?' 🔥':''}</span></div>`;
-  html += `<div class="rp-row"><span class="rp-label">移速</span><span class="rp-val">${r.speed.toFixed(1)}格/s${r.buffs&&r.buffs.berserk>0?' ⚡':''}</span></div>`;
+  html += `<div class="rp-row"><span class="rp-label">移速</span><span class="rp-val">${r.speed.toFixed(1)}格/s${r.buffs&&r.buffs.speedUp>0?' 🌬️':''}</span></div>`;
   html += `<div class="rp-row"><span class="rp-label">冲锋</span><span class="rp-val">×${(RIDER_CFG.chargeBonus * (r.chargeBonusMul||1)).toFixed(1)}</span></div>`;
+  html += `<div class="rp-row"><span class="rp-label">经验</span><span class="rp-val">${r.exp}/${r.expToNext}</span></div>`;
   if (r.canLeap) html += `<div class="rp-row"><span class="rp-label">跳跃</span><span class="rp-val">✓</span></div>`;
   if (r.canCrossLane) html += `<div class="rp-row"><span class="rp-label">跨线</span><span class="rp-val">✓</span></div>`;
   // 技能列表
@@ -638,12 +867,61 @@ function updateRiderPanel() {
       const cdTxt = ready ? '就绪' : Math.ceil(cd) + 's';
       const last = r.lastSkill === k && r.lastSkillT < 3;
       html += `<div class="rp-skill${ready?' ready':' cooling'}${last?' just':''}" style="border-left-color:${sk.color}">`;
-      html += `<span class="rp-sk-name">${sk.name}</span>`;
+      html += `<span class="rp-sk-name">${sk.icon||'✦'} ${sk.name}</span>`;
       html += `<span class="rp-sk-cd">${cdTxt}</span>`;
       html += `</div>`;
     }
   }
-  panel.innerHTML = html;
+  body.innerHTML = html;
+}
+
+function setupRiderPanelDrag() {
+  const panel = $('riderPanel');
+  const handle = $('rpHandle');
+  if (!panel || !handle) return;
+
+  const onDown = (e) => {
+    _riderPanelDrag.dragging = true;
+    _riderPanelDrag.moved = false;
+    const pt = e.touches ? e.touches[0] : e;
+    _riderPanelDrag.startX = pt.clientX;
+    _riderPanelDrag.startY = pt.clientY;
+    const rect = panel.getBoundingClientRect();
+    const parentRect = panel.parentElement.getBoundingClientRect();
+    _riderPanelDrag.startRight = parentRect.right - rect.right;
+    _riderPanelDrag.startBottom = parentRect.bottom - rect.bottom;
+    e.preventDefault();
+  };
+
+  const onMove = (e) => {
+    if (!_riderPanelDrag.dragging) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - _riderPanelDrag.startX;
+    const dy = pt.clientY - _riderPanelDrag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 5) _riderPanelDrag.moved = true;
+    const newRight = _riderPanelDrag.startRight - dx;
+    const newBottom = _riderPanelDrag.startBottom - dy;
+    panel.style.right = Math.max(4, newRight) + 'px';
+    panel.style.bottom = Math.max(4, newBottom) + 'px';
+    panel.style.left = 'auto';
+    panel.style.top = 'auto';
+    e.preventDefault();
+  };
+
+  const onUp = (e) => {
+    if (!_riderPanelDrag.dragging) return;
+    _riderPanelDrag.dragging = false;
+    if (!_riderPanelDrag.moved) {
+      panel.classList.toggle('collapsed');
+    }
+  };
+
+  handle.addEventListener('mousedown', onDown);
+  handle.addEventListener('touchstart', onDown, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchend', onUp);
 }
 
 /* ============ 波次结算 ============ */
@@ -797,6 +1075,37 @@ function draw() {
     });
   }
 
+  // ===== 火焰路径（烈焰冲锋技能视觉） =====
+  if (S.fireTrails && S.fireTrails.length > 0) {
+    S.fireTrails.forEach(f => {
+      const p = f.t / f.dur;
+      const alpha = Math.max(0, 1 - p) * 0.7;
+      const scale = 0.6 + Math.sin(f.t * 8) * 0.1;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 0.45 * scale);
+      grd.addColorStop(0, `rgba(255,180,60,${alpha})`);
+      grd.addColorStop(0.4, `rgba(255,100,30,${alpha * 0.7})`);
+      grd.addColorStop(1, `rgba(255,50,20,0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(0, 0, s * 0.45 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      // 火苗
+      for (let i = 0; i < 3; i++) {
+        const fy = -s * 0.15 * (1 + i * 0.4) + Math.sin(f.t * 10 + i) * 2;
+        const fx = Math.sin(f.t * 6 + i * 2) * 3;
+        const fh = s * 0.15 * (1 - p * 0.5);
+        const fw = s * 0.08 * (1 - p * 0.5);
+        ctx.fillStyle = `rgba(255,${180 - i * 40},40,${alpha * (0.6 + i * 0.2)})`;
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, fw, fh, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
   // ===== 格子主体 =====
   for (const c of S.cells) {
     const u = c.unit;
@@ -888,6 +1197,13 @@ function draw() {
     }
 
     if (u) {
+      // 护盾效果
+      if (u.shield && u.shield > 0) {
+        ctx.strokeStyle='#88ddff'; ctx.lineWidth=2;
+        ctx.globalAlpha=0.6+Math.sin(S.time*4)*0.3;
+        ctx.beginPath();ctx.arc(0,0,s*0.48,0,Math.PI*2);ctx.stroke();
+        ctx.globalAlpha=1;
+      }
       ctx.fillStyle = UNITS[u.ch].color;
       ctx.font = `900 ${s*0.5}px "PingFang SC",sans-serif`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -898,7 +1214,6 @@ function draw() {
       ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(-hpw/2,s/2-8,hpw,4);
       ctx.fillStyle=ratio>0.4?'#4fc07a':'#e05a5a'; ctx.fillRect(-hpw/2,s/2-8,hpw*ratio,4);
       if (u.aura>1) { ctx.fillStyle='#4fc07a'; ctx.font=`700 ${s*0.15}px sans-serif`; ctx.fillText('▲速',0,-s*0.34); }
-      // 集结号角增益：金色光环 + 标识
       if (u.rallyBuff>0) {
         ctx.strokeStyle='#ffdd44'; ctx.lineWidth=2;
         ctx.globalAlpha=0.5+Math.sin(S.time*6)*0.25;
@@ -906,6 +1221,15 @@ function draw() {
         ctx.globalAlpha=1;
         ctx.fillStyle='#ffdd44'; ctx.font=`700 ${s*0.13}px sans-serif`;
         ctx.fillText('号', s*0.32, -s*0.32);
+      }
+      // 合成单位大招冷却指示
+      if (u.combo && u.comboSkillCd > 0) {
+        const cdRatio = Math.min(1, u.comboSkillCd / 8);
+        ctx.strokeStyle='rgba(255,255,255,0.5)';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.arc(0, 0, s*0.45, -Math.PI/2, -Math.PI/2 + (1-cdRatio)*Math.PI*2);
+        ctx.stroke();
       }
     }
     if (S.selCell === S.cells.indexOf(c)) {
@@ -948,6 +1272,42 @@ function draw() {
     ctx.save(); ctx.translate(e.x,e.y);
     ctx.fillStyle='rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(0,e.r*0.85,e.r*0.8,e.r*0.3,0,0,Math.PI*2); ctx.fill();
+    // 定身/冰冻效果
+    if(e.root>0){
+      ctx.fillStyle='rgba(100,200,255,0.4)';
+      ctx.beginPath();ctx.arc(0,0,e.r*1.2,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#4fd0f8';ctx.lineWidth=2;
+      for(let i=0;i<6;i++){
+        const a=(i/6)*Math.PI*2;
+        ctx.beginPath();ctx.moveTo(Math.cos(a)*e.r*0.6,Math.sin(a)*e.r*0.6);
+        ctx.lineTo(Math.cos(a)*e.r*1.1,Math.sin(a)*e.r*1.1);ctx.stroke();
+      }
+    }
+    // 眩晕效果
+    if(e.stun>0){
+      ctx.fillStyle='rgba(255,200,0,0.3)';
+      ctx.beginPath();ctx.arc(0,0,e.r*1.15,0,Math.PI*2);ctx.fill();
+      // 星星
+      for(let i=0;i<3;i++){
+        const a=S.time*2+(i/3)*Math.PI*2;
+        ctx.fillStyle='#ffd700';
+        ctx.font=`900 ${e.r*0.4}px sans-serif`;
+        ctx.textAlign='center';
+        ctx.fillText('★',Math.cos(a)*e.r*0.9,-e.r*0.8+Math.sin(a)*4);
+      }
+    }
+    // 燃烧效果
+    if(e.burning>0){
+      ctx.fillStyle='rgba(255,100,30,0.25)';
+      ctx.beginPath();ctx.arc(0,0,e.r*1.1,0,Math.PI*2);ctx.fill();
+    }
+    // 子牙减速效果
+    if(e.jiangSlow>0){
+      ctx.strokeStyle='rgba(218,165,32,0.6)';ctx.lineWidth=2;
+      ctx.setLineDash([3,3]);ctx.lineDashOffset=-S.time*20;
+      ctx.beginPath();ctx.arc(0,0,e.r*1.05,0,Math.PI*2);ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.fillStyle=d.color;
     if(e.boss||e.elite){ctx.shadowColor=d.color;ctx.shadowBlur=16;}
     ctx.beginPath();ctx.arc(0,0,e.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
@@ -961,6 +1321,32 @@ function draw() {
     ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(-bw2/2,-e.r-9,bw2,4);
     ctx.fillStyle=e.boss?'#ffb84f':'#ff6a6a';ctx.fillRect(-bw2/2,-e.r-9,bw2*rr2,4);
     ctx.restore();
+  }
+
+  // 公豹召唤的友军单位
+  if (S.friendlies && S.friendlies.length > 0) {
+    for (const f of S.friendlies) {
+      if (f.dead) continue;
+      ctx.save();ctx.translate(f.x,f.y);
+      ctx.fillStyle='rgba(0,0,0,0.3)';
+      ctx.beginPath();ctx.ellipse(0,f.r*0.85,f.r*0.7,f.r*0.25,0,0,Math.PI*2);ctx.fill();
+      // 紫色魔光
+      ctx.shadowColor='#9932cc';ctx.shadowBlur=10;
+      ctx.fillStyle='#8b008b';
+      ctx.beginPath();ctx.arc(0,0,f.r,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.fillStyle='#fff';
+      ctx.font=`900 ${f.r*0.9}px "PingFang SC",sans-serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText('魔',0,1);
+      // 剩余时间条
+      const lr=Math.max(0,f.lifetime/10);
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+      ctx.fillRect(-f.r*1.2,-f.r-8,f.r*2.4,3);
+      ctx.fillStyle='#9932cc';
+      ctx.fillRect(-f.r*1.2,-f.r-8,f.r*2.4*lr,3);
+      ctx.restore();
+    }
   }
 
   // 弹道
@@ -1057,6 +1443,105 @@ function draw() {
       ctx.setLineDash([4,4]);ctx.lineDashOffset=-p*20;
       ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(f.tx,f.ty);ctx.stroke();
       ctx.setLineDash([]);ctx.shadowBlur=0;
+    } else if(f.type==='combo_heal'){
+      // 唐僧治疗：金色同心圆
+      ctx.strokeStyle='#ffd700';ctx.lineWidth=2;
+      ctx.shadowColor='#ffd700';ctx.shadowBlur=10;
+      for(let i=0;i<3;i++){
+        const rr=f.r*(0.3+p*0.7+i*0.15);
+        ctx.globalAlpha=Math.max(0,1-p)* (0.8-i*0.25);
+        ctx.beginPath();ctx.arc(f.x,f.y,rr,0,Math.PI*2);ctx.stroke();
+      }
+      ctx.shadowBlur=0;
+    } else if(f.type==='combo_buddha'){
+      // 佛光普照：卍字光芒
+      ctx.save();ctx.translate(f.x,f.y);ctx.rotate(p*Math.PI*0.5);
+      ctx.fillStyle='rgba(255,215,0,0.6)';
+      ctx.shadowColor='#ffd700';ctx.shadowBlur=15;
+      for(let i=0;i<4;i++){
+        ctx.rotate(Math.PI/2);
+        ctx.fillRect(-3,-S.cellSize*0.4*(0.5+p*0.5),6,S.cellSize*0.4*(0.5+p*0.5));
+        ctx.fillRect(-S.cellSize*0.3*(0.5+p*0.5),-3,S.cellSize*0.3*(0.5+p*0.5),6);
+      }
+      ctx.shadowBlur=0;ctx.restore();
+    } else if(f.type==='combo_buddha_big'){
+      // 佛光普照大招：全场金色光晕
+      const grd=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r);
+      grd.addColorStop(0,`rgba(255,215,0,${0.25*(1-p)})`);
+      grd.addColorStop(0.5,`rgba(255,200,50,${0.1*(1-p)})`);
+      grd.addColorStop(1,'rgba(255,180,0,0)');
+      ctx.fillStyle=grd;
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.5+p*0.5),0,Math.PI*2);ctx.fill();
+    } else if(f.type==='combo_monkey'){
+      // 悟空大闹天宫：旋转金箍棒+扩散冲击波
+      ctx.save();ctx.translate(f.x,f.y);ctx.rotate(p*Math.PI*4);
+      ctx.strokeStyle='#ff8c00';ctx.lineWidth=5*(1-p*0.5);
+      ctx.shadowColor='#ff8c00';ctx.shadowBlur=15;
+      ctx.beginPath();ctx.arc(0,0,f.r*(0.3+p*0.7),0,Math.PI*2);ctx.stroke();
+      ctx.lineWidth=4*(1-p*0.3);
+      for(let i=0;i<3;i++){
+        ctx.rotate(Math.PI*2/3);
+        ctx.beginPath();ctx.moveTo(0,0);
+        ctx.lineTo(f.r*(0.4+p*0.6),0);ctx.stroke();
+      }
+      ctx.shadowBlur=0;ctx.restore();
+    } else if(f.type==='combo_pig'){
+      // 八戒扇形横扫
+      ctx.save();ctx.translate(f.x,f.y);ctx.rotate(f.ang||0);
+      ctx.fillStyle='rgba(70,130,180,0.5)';
+      ctx.strokeStyle='#4682b4';ctx.lineWidth=3;
+      ctx.shadowColor='#4682b4';ctx.shadowBlur=10;
+      const a=(Math.PI*0.7)*(0.5+p*0.5);
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0,0,f.r*(0.6+p*0.4),-a/2,a/2);
+      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.shadowBlur=0;ctx.restore();
+    } else if(f.type==='combo_sha_explode'){
+      // 沙僧死亡爆炸：绿色冲击波+水纹
+      ctx.strokeStyle='#2e8b57';ctx.lineWidth=4*(1-p);
+      ctx.shadowColor='#2e8b57';ctx.shadowBlur=12;
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.2+p*0.8),0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='rgba(46,139,87,0.3)';
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.1+p*0.9),0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+    } else if(f.type==='combo_whip'){
+      // 打神鞭：金色闪电落下
+      ctx.strokeStyle='#daa520';ctx.lineWidth=3;
+      ctx.shadowColor='#ffd700';ctx.shadowBlur=12;
+      ctx.beginPath();
+      ctx.moveTo(f.x,f.y-40);
+      const segs=4;
+      for(let i=1;i<=segs;i++){
+        const t=i/segs;
+        ctx.lineTo(f.x+(Math.random()-0.5)*16,f.y-40+t*40);
+      }
+      ctx.stroke();ctx.shadowBlur=0;
+    } else if(f.type==='combo_whip_big'){
+      // 打神鞭全场：金色雷光
+      ctx.fillStyle=`rgba(218,165,32,${0.15*(1-p)})`;
+      ctx.fillRect(0,0,W,H);
+    } else if(f.type==='combo_summon'){
+      // 公豹召唤：紫色魔光从地下升起
+      ctx.strokeStyle='#8b008b';ctx.lineWidth=3;
+      ctx.shadowColor='#9932cc';ctx.shadowBlur=10;
+      for(let i=0;i<5;i++){
+        const ang=(i/5)*Math.PI*2+p*2;
+        const h=30*(0.5+p*0.5);
+        ctx.beginPath();
+        ctx.moveTo(f.x+Math.cos(ang)*15,f.y);
+        ctx.quadraticCurveTo(f.x+Math.cos(ang)*20,f.y-h*0.5,f.x+Math.cos(ang)*10,f.y-h);
+        ctx.stroke();
+      }
+      ctx.shadowBlur=0;
+    } else if(f.type==='combo_explode'){
+      // 公豹召唤物自爆：紫色爆炸
+      ctx.strokeStyle='#8b008b';ctx.lineWidth=4*(1-p);
+      ctx.shadowColor='#9932cc';ctx.shadowBlur=15;
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.3+p*0.7),0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='rgba(139,0,139,0.3)';
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*(0.2+p*0.8),0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
     }
     ctx.globalAlpha=1;
   }
@@ -1158,5 +1643,6 @@ function relocateRidersForNewLevel() {
 
 ovAction = reset;
 resize();
+setupRiderPanelDrag();
 reset();
 startLoop();

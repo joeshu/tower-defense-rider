@@ -154,37 +154,108 @@ html, body {
 }
 .spd-btn.active { background: #4a3a6a; color: #f4c95d; border-color: #7a5cc9; }
 
-/* ---------- Rider Status Panel ---------- */
+/* ---------- Rider Status Panel (draggable & collapsible) ---------- */
 #riderPanel {
-  position: absolute; bottom: 210px; right: 8px;
-  background: rgba(34,31,43,.92); border-radius: 10px;
-  padding: 6px 10px; color: #e8dfc8; font-size: 11px;
-  z-index: 10; min-width: 120px; max-height: 70vh; overflow-y: auto;
-  border: 1px solid #4a3a6a;
+  position: absolute;
+  right: 12px;
+  bottom: 220px;
+  z-index: 20;
+  user-select: none;
+  touch-action: none;
 }
-#riderPanel.hidden { display: none; }
+#riderPanel .rp-handle {
+  position: absolute;
+  right: 0;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #6a4aaa, #3a2460);
+  color: #f4c95d;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5), inset 0 1px 2px rgba(255,255,255,.2);
+  border: 2px solid #f4c95d;
+  z-index: 2;
+  transition: transform .15s;
+}
+#riderPanel .rp-handle:active { cursor: grabbing; transform: scale(1.1); }
+#riderPanel .rp-handle::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  background: #4fc07a;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #4fc07a;
+}
+#riderPanel .rp-body {
+  background: rgba(34,31,43,.94);
+  border-radius: 12px;
+  padding: 8px 12px;
+  color: #e8dfc8;
+  font-size: 11px;
+  min-width: 140px;
+  max-height: 65vh;
+  overflow-y: auto;
+  border: 1px solid #4a3a6a;
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  backdrop-filter: blur(8px);
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: bottom right;
+  transition: opacity .2s, transform .2s;
+}
+#riderPanel.collapsed .rp-body {
+  opacity: 0;
+  transform: scale(.85);
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  bottom: -8px;
+}
 #riderPanel .rp-title {
-  color: #f4c95d; font-weight: 900; font-size: 12px;
-  margin-bottom: 3px; text-align: center;
+  color: #f4c95d;
+  font-weight: 900;
+  font-size: 13px;
+  margin-bottom: 4px;
+  text-align: center;
 }
 #riderPanel .rp-row {
-  display: flex; justify-content: space-between; align-items: center;
-  margin: 2px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 3px 0;
 }
 #riderPanel .rp-label { color: #bfae8a; }
 #riderPanel .rp-val { color: #ffb84f; font-weight: 700; }
 #riderPanel .rp-sep {
-  color: #7a6a90; font-size: 10px; text-align: center;
-  margin: 4px 0 2px; border-top: 1px solid #3a3450; padding-top: 3px;
+  color: #7a6a90;
+  font-size: 10px;
+  text-align: center;
+  margin: 6px 0 3px;
+  border-top: 1px solid #3a3450;
+  padding-top: 5px;
 }
 #riderPanel .rp-skill {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 2px 4px; margin: 2px 0;
-  border-left: 3px solid #555; border-radius: 0 4px 4px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  margin: 2px 0;
+  border-left: 3px solid #555;
+  border-radius: 0 6px 6px 0;
   font-size: 10px;
+  transition: background .2s;
 }
 #riderPanel .rp-skill.ready { background: rgba(79,192,122,.12); }
-#riderPanel .rp-skill.cooling { opacity: .5; }
+#riderPanel .rp-skill.cooling { opacity: .55; }
 #riderPanel .rp-skill.just { background: rgba(244,201,93,.2); animation: pulse .6s ease 2; }
 #riderPanel .rp-sk-name { color: #e8dfc8; font-weight: 700; }
 #riderPanel .rp-sk-cd { color: #ffb84f; font-weight: 700; }

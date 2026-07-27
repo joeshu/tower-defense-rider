@@ -23,7 +23,7 @@ const RIDER_CFG = {
   baseHp: 100,
   baseAtk: 22,
   baseRange: 1,         // 攻击范围（格子曼哈顿距离）
-  cellSpeed: 5.0,       // 格/秒，越大越快。5.0 = 每格0.2秒
+  cellSpeed: 1.6,       // 格/秒，越大越快。1.6 = 每格约0.625秒
   chargeBonus: 1.8,     // 冲锋伤害倍率
   trampleDmg: 0.35,     // 践踏溅射占比
   patrolBias: 0.6,      // 巡逻时继续沿原方向的概率
@@ -41,21 +41,26 @@ const RIDER_CFG = {
 };
 
 /* ============ 骑术技能定义 ============
- * 每种技能根据战场情境触发，有独立冷却。
- * 共11种技能，覆盖不同战斗场景。
+ * 每种技能根据战场情境触发，有独立冷却和独特机制。
+ * 8大技能，各有鲜明特色：
+ *   🔥 烈焰冲锋 - 跑过的格子留火，敌人踩上灼烧
+ *   🌀 旋风斩   - 周围3+敌→360°横扫斩
+ *   ⚡ 雷霆一击 - 精英/BOSS→天降惊雷高额伤害
+ *   💚 治愈光环 - 友军低血→持续回血+护盾
+ *   📯 集结号角 - 友军邻接→全体攻速+移速buff
+ *   💥 践踏震波 - 连跑4格→落地震波+击飞
+ *   🏹 贯穿突刺 - 直线冲锋→穿透4格所有敌人
+ *   ⚡ 连环闪电 - 击杀时→闪电连锁弹跳
  */
 const RIDER_SKILLS = {
-  whirlwind: { name: '旋风斩', cd: 4.0, color: '#ff66ff', desc: '周围3+敌→范围横扫' },
-  trample:   { name: '冲锋践踏', cd: 3.0, color: '#ffaa44', desc: '连跑4格→震波AOE' },
-  leap:      { name: '跳跃突袭', cd: 5.0, color: '#66ddff', desc: '远处有敌→飞跃突进' },
-  rally:     { name: '集结号角', cd: 6.0, color: '#ffdd44', desc: '友军邻接→攻速增益' },
-  berserk:   { name: '绝地狂暴', cd: 8.0, color: '#ff4444', desc: 'HP<35%→狂暴回血' },
-  chain:     { name: '连环闪电', cd: 2.0, color: '#ffee66', desc: '击杀时→闪电连锁' },
-  charge:    { name: '冲刺突刺', cd: 5.5, color: '#ff4488', desc: '连跑6格→穿透直线敌人' },
-  heal:      { name: '治愈光环', cd: 7.0, color: '#44ff88', desc: '周围友军持续回血' },
-  counter:   { name: '闪避反击', cd: 4.5, color: '#88ddff', desc: '受击时闪避并反击' },
-  thunder:   { name: '雷霆一击', cd: 10.0, color: '#ffdd00', desc: '对精英/BOSS造成高额伤害' },
-  summon:    { name: '召唤支援', cd: 12.0, color: '#aa66ff', desc: '召唤2个临时骑兵支援' },
+  firetrail: { name: '烈焰冲锋', icon: '🔥', cd: 0,    color: '#ff6a2a', desc: '跑过的格子留下火焰，敌人灼烧' },
+  whirlwind: { name: '旋风斩',   icon: '🌀', cd: 5.0,  color: '#ff66ff', desc: '周围3+敌→范围横扫斩' },
+  thunder:   { name: '雷霆一击', icon: '🌩️', cd: 12.0, color: '#ffdd00', desc: '精英/BOSS→天降惊雷' },
+  heal:      { name: '治愈光环', icon: '💚', cd: 9.0,  color: '#44ff88', desc: '友军低血→持续回血' },
+  rally:     { name: '集结号角', icon: '📯', cd: 7.0,  color: '#ffdd44', desc: '友军邻接→攻速+移速' },
+  trample:   { name: '践踏震波', icon: '💥', cd: 4.0,  color: '#ffaa44', desc: '连跑4格→震波击飞' },
+  charge:    { name: '贯穿突刺', icon: '🏹', cd: 7.0,  color: '#ff4488', desc: '连跑6格→直线穿透' },
+  chain:     { name: '连环闪电', icon: '⚡', cd: 2.5,  color: '#ffee66', desc: '击杀时→闪电连锁' },
 };
 
 /* ============ 创建骑马单位 ============ */
@@ -91,7 +96,7 @@ function makeRider(cellX, cellY, level) {
     kills: 0,
     dead: false,
     hitCombo: 0,
-    skills: { whirlwind: 0, trample: 0, leap: 0, rally: 0, berserk: 0, chain: 0, charge: 0, heal: 0, counter: 0, thunder: 0, summon: 0 },
+    skills: { firetrail: 0, whirlwind: 0, thunder: 0, heal: 0, rally: 0, trample: 0, charge: 0, chain: 0 },
     buffs: { berserk: 0, rallyAura: 0, leaping: 0, healing: 0, invincible: 0, speedUp: 0 },
     lastSkill: '',
     lastSkillT: 0,
@@ -320,230 +325,191 @@ function onArriveCell(rider) {
   S.enemies = S.enemies.filter(e => !e.dead);
 }
 
-/* ============ 情境技能系统 ============
- * 根据战场情况自动释放不同技能：
- *   - 旋风斩：周围3+敌人时横扫
- *   - 冲锋践踏：连跑4格后震波AOE
- *   - 跳跃突袭：远处有敌人时飞跃突进
- *   - 集结号角：友军邻接时增益攻速
- *   - 绝地狂暴：HP<35%时狂暴回血
- *   - 连环闪电：击杀时闪电连锁
+/* ============ 情境技能系统（特色版） ============
+ * 8大技能，各有鲜明特色和独特机制：
+ *   🔥 烈焰冲锋（被动） - 跑过留火，敌人灼烧
+ *   🌀 旋风斩        - 3+敌→360°横扫
+ *   💥 践踏震波      - 连跑4格→震波+击飞
+ *   🏹 贯穿突刺      - 连跑6格→直线穿透5格
+ *   ⚡ 连环闪电      - 击杀时→闪电连锁3跳
+ *   📯 集结号角      - 2+友军→全体攻速+移速
+ *   💚 治愈光环      - 友军低血→立即回血+持续
+ *   🌩️ 雷霆一击      - 精英/BOSS→惊雷高伤+眩晕
  */
+function _applyFireTrail(rider) {
+  if (!S.fireTrails) S.fireTrails = [];
+  const cellKey = rider.cx + ',' + rider.cy;
+  const existing = S.fireTrails.find(f => f.key === cellKey);
+  if (existing) { existing.t = 0; return; }
+  const cell = S.cells.find(c => c.gc === rider.cx && c.gr === rider.cy);
+  if (!cell) return;
+  S.fireTrails.push({
+    key: cellKey, x: cell.px, y: cell.py,
+    t: 0, dur: 3.5, dmg: rider.atk * 0.25,
+    hitSet: {}
+  });
+}
+
+function updateFireTrails(dt) {
+  if (!S.fireTrails) return;
+  const enemies = S.enemies || [];
+  for (let i = S.fireTrails.length - 1; i >= 0; i--) {
+    const f = S.fireTrails[i];
+    f.t += dt;
+    if (f.t >= f.dur) { S.fireTrails.splice(i, 1); continue; }
+    const sec = Math.floor(f.t);
+    enemies.forEach(e => {
+      if (e.dead || e.hp <= 0) return;
+      const dist = Math.hypot(e.x - f.x, e.y - f.y);
+      if (dist < S.cellSize * 0.4) {
+        const hitKey = e.id + '_' + sec;
+        if (!f.hitSet[hitKey]) {
+          f.hitSet[hitKey] = true;
+          e.hp -= f.dmg;
+          e.burning = Math.max(e.burning || 0, 1.0);
+          S.floats.push({ x: e.x + (Math.random()-0.5)*6, y: e.y - 10, t: 0, txt: '🔥' + Math.round(f.dmg), color: '#ff6a2a' });
+        }
+      }
+    });
+  }
+}
+
 function tryRiderSkills(rider, targets, mainTarget, killed) {
   if (rider.dead) return;
   const enemies = S.enemies.filter(e => !e.dead && e.hp > 0);
-  const berserkActive = rider.buffs.berserk > 0;
-
-  // ===== 1. 绝地狂暴：HP < 35% =====
-  if (rider.hp < rider.maxHp * 0.35 && rider.skills.berserk <= 0) {
-    rider.skills.berserk = RIDER_SKILLS.berserk.cd;
-    rider.buffs.berserk = 4; // 4秒狂暴
-    rider.hp = Math.min(rider.maxHp, rider.hp + rider.maxHp * 0.15); // 回血15%
-    S.fx.push({ type: 'berserk', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 0.7, dur: 0.6 });
-    S.floats.push({ x: rider.px, y: rider.py - 30, t: 0, txt: '🔥绝地狂暴!', color: '#ff4444', big: true });
-    rider.lastSkill = 'berserk';
-    rider.lastSkillT = 0;
-  }
-
-  // ===== 2. 旋风斩：3+敌人在范围内 =====
   const aliveTargets = targets.filter(e => !e.dead && e.hp > 0);
+
+  _applyFireTrail(rider);
+
   if (aliveTargets.length >= 3 && rider.skills.whirlwind <= 0) {
     rider.skills.whirlwind = RIDER_SKILLS.whirlwind.cd;
-    const dmg = rider.atk * 1.2 * (berserkActive ? 1.5 : 1);
-    aliveTargets.forEach(e => {
-      e.hp -= dmg;
-      S.floats.push({ x: e.x + (Math.random()-0.5)*10, y: e.y - 14, t: 0, txt: '🌀' + Math.round(dmg), color: '#ff66ff' });
-    });
-    S.fx.push({ type: 'whirlwind', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 1.3, dur: 0.5 });
-    S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '🌀旋风斩!', color: '#ff66ff', big: true });
-    rider.lastSkill = 'whirlwind';
-    rider.lastSkillT = 0;
+    const dmg = rider.atk * 1.5;
+    aliveTargets.forEach(e => { e.hp -= dmg;
+      S.floats.push({ x: e.x + (Math.random()-0.5)*10, y: e.y - 14, t: 0, txt: '🌀' + Math.round(dmg), color: '#ff66ff' }); });
+    S.fx.push({ type: 'whirlwind', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 1.5, dur: 0.6 });
+    S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '🌀 旋风斩!', color: '#ff66ff', big: true });
+    rider.lastSkill = 'whirlwind'; rider.lastSkillT = 0;
   }
 
-  // ===== 3. 冲锋践踏：连跑4格+有敌人在范围内 =====
-  if (rider.history.length >= 4 && targets.length > 0 && rider.skills.trample <= 0) {
+  if (rider.history.length >= 4 && aliveTargets.length > 0 && rider.skills.trample <= 0) {
     rider.skills.trample = RIDER_SKILLS.trample.cd;
-    const dmg = rider.atk * 0.5 * rider.history.length * 0.18 * (berserkActive ? 1.5 : 1);
-    // 2格范围内的所有敌人都受伤
+    const dmg = rider.atk * 1.2;
     enemies.forEach(e => {
       const egx = Math.round((e.x - S.heartX) / S.cellSize);
       const egy = Math.round((e.y - S.heartY) / S.cellSize);
       if (manhattan(rider.cx, rider.cy, egx, egy) <= 2) {
-        e.hp -= dmg;
+        e.hp -= dmg; e.knockback = 0.3;
+        e.knockbackX = (e.x - rider.px) * 0.3;
+        e.knockbackY = (e.y - rider.py) * 0.3;
         S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '💥' + Math.round(dmg), color: '#ffaa44' });
       }
     });
-    S.fx.push({ type: 'shockwave', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 1.6, dur: 0.5 });
-    S.shake = Math.max(S.shake, 6);
-    S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '💥冲锋践踏!', color: '#ffaa44', big: true });
-    rider.lastSkill = 'trample';
-    rider.lastSkillT = 0;
+    for (let i = 0; i < 3; i++) setTimeout(() => {
+      S.fx.push({ type: 'shockwave', x: rider.px, y: rider.py, t: 0, r: S.cellSize * (1 + i * 0.5), dur: 0.4 });
+    }, i * 60);
+    S.shake = Math.max(S.shake, 8);
+    S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '💥 践踏震波!', color: '#ffaa44', big: true });
+    rider.lastSkill = 'trample'; rider.lastSkillT = 0;
   }
 
-  // ===== 4. 跳跃突袭：范围内无敌人，但2-4格内有敌人 =====
-  if (targets.length === 0 && rider.skills.leap <= 0 && rider.buffs.leaping <= 0) {
-    const enemy = findNearestEnemy(rider.cx, rider.cy);
-    if (enemy && enemy.dist >= 2 && enemy.dist <= 4) {
-      rider.skills.leap = RIDER_SKILLS.leap.cd;
-      rider.buffs.leaping = 0.4; // 飞跃动画时间
-      // 朝敌人格子飞跃
-      rider.fromX = rider.cx;
-      rider.fromY = rider.cy;
-      rider.toX = enemy.gx;
-      rider.toY = enemy.gy;
-      rider.progress = 0;
-      S.fx.push({ type: 'leap', x: rider.px, y: rider.py, t: 0, tx: enemy.enemy.x, ty: enemy.enemy.y, dur: 0.4 });
-      S.floats.push({ x: rider.px, y: rider.py - 30, t: 0, txt: '✨跳跃突袭!', color: '#66ddff', big: true });
-      rider.lastSkill = 'leap';
-      rider.lastSkillT = 0;
-    }
-  }
-
-  // ===== 5. 集结号角：2格内有友军 =====
-  if (rider.skills.rally <= 0) {
-    let friendlies = 0;
-    S.cells.forEach(c => {
-      if (!c.unit) return;
-      const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
-      if (d <= 2 && d > 0) friendlies++;
-    });
-    if (friendlies >= 1) {
-      rider.skills.rally = RIDER_SKILLS.rally.cd;
-      rider.buffs.rallyAura = 3;
-      S.cells.forEach(c => {
-        if (!c.unit) return;
-        const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
-        if (d <= 2 && d > 0) {
-          c.unit.rallyBuff = 4; // 4秒攻速+40%
-          S.fx.push({ type: 'rally', x: c.px, y: c.py, t: 0, r: S.cellSize * 0.5, dur: 0.6 });
-        }
-      });
-      S.fx.push({ type: 'rally', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 1.1, dur: 0.6 });
-      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '📯集结号角!', color: '#ffdd44', big: true });
-      rider.lastSkill = 'rally';
-      rider.lastSkillT = 0;
-    }
-  }
-
-  // ===== 6. 连环闪电：击杀敌人时触发 =====
-  if (killed && mainTarget && rider.skills.chain <= 0) {
-    const chainTargets = enemies.filter(e => e !== mainTarget && !e.dead &&
-      Math.hypot(e.x - mainTarget.x, e.y - mainTarget.y) < S.cellSize * 2.5).slice(0, 2);
-    if (chainTargets.length > 0) {
-      rider.skills.chain = RIDER_SKILLS.chain.cd;
-      let prev = { x: mainTarget.x, y: mainTarget.y };
-      chainTargets.forEach((e, idx) => {
-        const dmg = rider.atk * 0.6 * Math.pow(0.7, idx) * (berserkActive ? 1.5 : 1);
-        e.hp -= dmg;
-        S.fx.push({ type: 'lightning', x: prev.x, y: prev.y, t: 0, tx: e.x, ty: e.y, dur: 0.3 });
-        S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '⚡' + Math.round(dmg), color: '#ffee66' });
-        prev = { x: e.x, y: e.y };
-      });
-      rider.lastSkill = 'chain';
-      rider.lastSkillT = 0;
-    }
-  }
-
-  // ===== 7. 冲刺突刺：连跑6格+直线方向有敌人 =====
   if (rider.history.length >= 6 && rider.skills.charge <= 0) {
-    const dx = rider.cx - rider.history[0].x;
-    const dy = rider.cy - rider.history[0].y;
-    const len = Math.sqrt(dx * dx + dy * dy);
+    const dx = rider.cx - rider.history[0].x, dy = rider.cy - rider.history[0].y;
+    const len = Math.sqrt(dx*dx + dy*dy);
     if (len >= 5.5) {
-      const dirX = dx / len;
-      const dirY = dy / len;
+      const dirX = dx/len, dirY = dy/len;
       let pierceTargets = [];
-      for (let i = 1; i <= 4; i++) {
-        const checkX = Math.round(rider.cx + dirX * i);
-        const checkY = Math.round(rider.cy + dirY * i);
+      for (let i = 1; i <= 5; i++) {
+        const cx = Math.round(rider.cx + dirX * i), cy = Math.round(rider.cy + dirY * i);
         enemies.forEach(e => {
           const egx = Math.round((e.x - S.heartX) / S.cellSize);
           const egy = Math.round((e.y - S.heartY) / S.cellSize);
-          if (egx === checkX && egy === checkY && !pierceTargets.includes(e)) {
-            pierceTargets.push(e);
-          }
+          if (manhattan(egx, egy, cx, cy) <= 1 && !pierceTargets.includes(e)) pierceTargets.push(e);
         });
       }
       if (pierceTargets.length > 0) {
         rider.skills.charge = RIDER_SKILLS.charge.cd;
-        const dmg = rider.atk * 2.0 * (berserkActive ? 1.5 : 1);
-        pierceTargets.forEach(e => {
-          e.hp -= dmg;
-          S.floats.push({ x: e.x, y: e.y - 14, t: 0, txt: '⚔️' + Math.round(dmg), color: '#ff4488' });
-        });
-        S.fx.push({ type: 'pierce', x: rider.px, y: rider.py, t: 0, dirX, dirY, len: S.cellSize * 4, dur: 0.4 });
-        S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '⚔️冲刺突刺!', color: '#ff4488', big: true });
-        rider.lastSkill = 'charge';
-        rider.lastSkillT = 0;
+        const dmg = rider.atk * 2.2;
+        pierceTargets.forEach(e => { e.hp -= dmg; e.pierceStun = 0.5;
+          S.floats.push({ x: e.x, y: e.y - 14, t: 0, txt: '🏹' + Math.round(dmg), color: '#ff4488' }); });
+        S.fx.push({ type: 'pierce', x: rider.px, y: rider.py, t: 0, dirX, dirY, len: S.cellSize * 5, dur: 0.5 });
+        S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '🏹 贯穿突刺!', color: '#ff4488', big: true });
+        rider.lastSkill = 'charge'; rider.lastSkillT = 0;
       }
     }
   }
 
-  // ===== 8. 治愈光环：周围友军血量低于50% =====
+  if (killed && mainTarget && rider.skills.chain <= 0) {
+    const chainTargets = enemies.filter(e => e !== mainTarget && !e.dead &&
+      Math.hypot(e.x - mainTarget.x, e.y - mainTarget.y) < S.cellSize * 3).slice(0, 3);
+    if (chainTargets.length > 0) {
+      rider.skills.chain = RIDER_SKILLS.chain.cd;
+      let prev = { x: mainTarget.x, y: mainTarget.y };
+      chainTargets.forEach((e, idx) => {
+        const dmg = rider.atk * 0.8 * Math.pow(0.8, idx);
+        e.hp -= dmg;
+        S.fx.push({ type: 'lightning', x: prev.x, y: prev.y, t: 0, tx: e.x, ty: e.y, dur: 0.25 });
+        S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '⚡' + Math.round(dmg), color: '#ffee66' });
+        prev = { x: e.x, y: e.y };
+      });
+      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '⚡ 连环闪电!', color: '#ffee66', big: true });
+      rider.lastSkill = 'chain'; rider.lastSkillT = 0;
+    }
+  }
+
+  if (rider.skills.rally <= 0) {
+    let friendlies = 0;
+    S.cells.forEach(c => { if (!c.unit) return;
+      const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
+      if (d <= 2 && d > 0) friendlies++; });
+    if (friendlies >= 2) {
+      rider.skills.rally = RIDER_SKILLS.rally.cd;
+      rider.buffs.rallyAura = 5;
+      S.cells.forEach(c => { if (!c.unit) return;
+        const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
+        if (d <= 3) { c.unit.rallyBuff = 5; c.unit.rallySpeedBuff = 5;
+          S.fx.push({ type: 'rally', x: c.px, y: c.py, t: 0, r: S.cellSize * 0.5, dur: 0.8 }); } });
+      rider.buffs.speedUp = Math.max(rider.buffs.speedUp || 0, 3);
+      for (let i = 0; i < 3; i++) setTimeout(() => {
+        S.fx.push({ type: 'rally', x: rider.px, y: rider.py, t: 0, r: S.cellSize * (0.8 + i * 0.5), dur: 0.6 });
+      }, i * 80);
+      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '📯 集结号角!', color: '#ffdd44', big: true });
+      rider.lastSkill = 'rally'; rider.lastSkillT = 0;
+    }
+  }
+
   if (rider.skills.heal <= 0) {
     let needHeal = false;
-    S.cells.forEach(c => {
-      if (!c.unit) return;
+    S.cells.forEach(c => { if (!c.unit) return;
       const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
-      if (d <= 2 && d > 0 && c.unit.hp < c.unit.maxHp * 0.5) {
-        needHeal = true;
-      }
-    });
-    if (needHeal || S.heartHp < S.heartMax * 0.5) {
+      if (d <= 2 && d > 0 && c.unit.hp < c.unit.maxHp * 0.6) needHeal = true; });
+    if (needHeal || S.heartHp < S.heartMax * 0.6) {
       rider.skills.heal = RIDER_SKILLS.heal.cd;
-      rider.buffs.healing = 3;
-      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '💚治愈光环!', color: '#44ff88', big: true });
-      rider.lastSkill = 'heal';
-      rider.lastSkillT = 0;
+      rider.buffs.healing = 4;
+      S.cells.forEach(c => { if (!c.unit) return;
+        const d = manhattan(rider.cx, rider.cy, c.gc, c.gr);
+        if (d <= 2) { c.unit.hp = Math.min(c.unit.maxHp, c.unit.hp + c.unit.maxHp * 0.25);
+          S.fx.push({ type: 'heal', x: c.px, y: c.py, t: 0, dur: 0.6 }); } });
+      if (S.heartHp < S.heartMax) S.heartHp = Math.min(S.heartMax, S.heartHp + S.heartMax * 0.1);
+      for (let i = 0; i < 4; i++) setTimeout(() => {
+        S.fx.push({ type: 'heal', x: rider.px, y: rider.py, t: 0, dur: 0.5 });
+      }, i * 100);
+      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '💚 治愈光环!', color: '#44ff88', big: true });
+      rider.lastSkill = 'heal'; rider.lastSkillT = 0;
     }
   }
 
-  // ===== 9. 闪避反击：连续受到攻击时触发 =====
-  if (rider.skills.counter <= 0 && rider.hitCombo >= 3) {
-    rider.skills.counter = RIDER_SKILLS.counter.cd;
-    rider.buffs.invincible = 0.5;
-    const dmg = rider.atk * 1.8 * (berserkActive ? 1.5 : 1);
-    const nearby = enemies.filter(e => {
-      const egx = Math.round((e.x - S.heartX) / S.cellSize);
-      const egy = Math.round((e.y - S.heartY) / S.cellSize);
-      return manhattan(rider.cx, rider.cy, egx, egy) <= 2;
-    });
-    if (nearby.length > 0) {
-      nearby[0].hp -= dmg;
-      S.floats.push({ x: nearby[0].x, y: nearby[0].y - 14, t: 0, txt: '⚡' + Math.round(dmg), color: '#88ddff' });
-    }
-    S.fx.push({ type: 'counter', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 0.8, dur: 0.4 });
-    S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '⚡闪避反击!', color: '#88ddff', big: true });
-    rider.hitCombo = 0;
-    rider.lastSkill = 'counter';
-    rider.lastSkillT = 0;
-  }
-
-  // ===== 10. 雷霆一击：对精英/BOSS造成高额伤害 =====
   if (rider.skills.thunder <= 0) {
     const eliteTarget = enemies.find(e => e.elite || e.boss);
     if (eliteTarget) {
       rider.skills.thunder = RIDER_SKILLS.thunder.cd;
-      const dmg = rider.atk * 4.5 * (berserkActive ? 1.5 : 1);
-      eliteTarget.hp -= dmg;
-      S.fx.push({ type: 'thunder', x: eliteTarget.x, y: eliteTarget.y, t: 0, r: eliteTarget.r || 20, dur: 0.7 });
-      S.fx.push({ type: 'ring', x: eliteTarget.x, y: eliteTarget.y, t: 0, r: (eliteTarget.r || 20) * 2, color: '#ffdd00', dur: 0.5 });
-      S.shake = Math.max(S.shake, 10);
+      const dmg = rider.atk * 5.0;
+      eliteTarget.hp -= dmg; eliteTarget.stun = 1.0;
+      S.fx.push({ type: 'thunder', x: eliteTarget.x, y: eliteTarget.y, t: 0, r: eliteTarget.r || 20, dur: 0.8 });
+      S.fx.push({ type: 'ring', x: eliteTarget.x, y: eliteTarget.y, t: 0, r: (eliteTarget.r || 20) * 3, color: '#ffdd00', dur: 0.6 });
+      S.shake = Math.max(S.shake, 14);
       S.floats.push({ x: eliteTarget.x, y: eliteTarget.y - 24, t: 0, txt: '🌩️' + Math.round(dmg), color: '#ffdd00', big: true });
-      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '🌩️雷霆一击!', color: '#ffdd00', big: true });
-      rider.lastSkill = 'thunder';
-      rider.lastSkillT = 0;
-    }
-  }
-
-  // ===== 11. 召唤支援：场上敌人超过8个时召唤 =====
-  if (enemies.length >= 8 && rider.skills.summon <= 0) {
-    rider.skills.summon = RIDER_SKILLS.summon.cd;
-    const allyCount = S.cells.filter(c => c.unit).length;
-    if (allyCount < S.cells.length * 0.6) {
-      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '👥召唤支援!', color: '#aa66ff', big: true });
-      rider.lastSkill = 'summon';
-      rider.lastSkillT = 0;
+      S.floats.push({ x: rider.px, y: rider.py - 34, t: 0, txt: '🌩️ 雷霆一击!', color: '#ffdd00', big: true });
+      rider.lastSkill = 'thunder'; rider.lastSkillT = 0;
     }
   }
 }
