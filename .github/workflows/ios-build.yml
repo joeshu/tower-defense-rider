@@ -75,7 +75,11 @@ jobs:
             CODE_SIGNING_IDENTITY="" \
             EXPAND_CODE_SIGN_VARIABLES=NO
 
-      - name: Find .app and create unsigned IPA
+      - name: Install ldid for ad-hoc signing
+        run: |
+          brew install ldid
+
+      - name: Find .app, ad-hoc sign, and create IPA
         run: |
           # Find the built .app
           APP_PATH=$(find ios/App/build -name "*.app" -type d | grep -v "AppBundle" | grep -v "PlugIns" | head -1)
@@ -88,10 +92,18 @@ jobs:
             exit 1
           fi
 
-          # Remove code signature if any
+          # Create ad-hoc signature with ldid (LiveContainer needs this)
+          echo "Applying ad-hoc signature with ldid..."
+          ldid -S "$APP_PATH"
+          echo "Ad-hoc signature created"
+
+          # Verify _CodeSignature exists
           if [ -d "$APP_PATH/_CodeSignature" ]; then
-            rm -rf "$APP_PATH/_CodeSignature"
-            echo "Removed _CodeSignature"
+            echo "_CodeSignature directory exists:"
+            ls -la "$APP_PATH/_CodeSignature"
+          else
+            echo "WARNING: _CodeSignature not found, creating manually"
+            mkdir -p "$APP_PATH/_CodeSignature"
           fi
 
           # Create IPA structure: Payload/App.app
@@ -105,7 +117,8 @@ jobs:
           ls -lh tower-defense-rider.ipa
 
           # Verify IPA structure
-          unzip -l tower-defense-rider.ipa | head -20
+          echo "=== IPA structure ==="
+          unzip -l tower-defense-rider.ipa | head -30
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
