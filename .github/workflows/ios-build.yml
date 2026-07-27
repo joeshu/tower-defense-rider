@@ -47,7 +47,8 @@ jobs:
 
       - name: Initialize Capacitor iOS platform
         run: |
-          npx cap add ios
+          npx cap add ios || npx cap add ios --deployment-target 14.0
+          ls -la ios/
 
       - name: Capacitor sync
         run: |
