@@ -5,12 +5,12 @@
 
 /* ===== 品质定义 ===== */
 const QUALITY = {
-  green:  { name: '凡品',  color: '#4ade80', atkPerLv: 0.04, baseCost: 100  },
+  green:  { name: '凡品',  color: '#54a868', atkPerLv: 0.04, baseCost: 100  },
   blue:   { name: '良品',  color: '#60a5fa', atkPerLv: 0.05, baseCost: 188  },
   purple: { name: '上品',  color: '#c084fc', atkPerLv: 0.06, baseCost: 500  },
   gold:   { name: '极品',  color: '#f4c95d', atkPerLv: 0.08, baseCost: 1000 },
   orange: { name: '神品',  color: '#ff8c42', atkPerLv: 0.10, baseCost: 2000 },
-  mythic: { name: '神话',  color: '#ff6b9d', atkPerLv: 0.12, baseCost: 5000 },
+  yellow: { name: '秘宝',  color: '#ffd93d', atkPerLv: 0.08, baseCost: 1500 },
 };
 
 /* ===== 武器列表 =====
@@ -77,17 +77,17 @@ const WEAPONS = [
     unlock: { type: 'weapon', weaponId: 'qiang', costDiamond: 300 },
     special: { '穿刺伤害+30%': true, atkBonus: 0.10 } },
 
-  /* ===== 趣味梗武器（金色） ===== */
-  { id: 'daodun',  name: '刀盾',   unitType: '盾', type: 'fun', quality: 'gold', maxLv: 20, icon: '🐶🛡️',
+  /* ===== 趣味梗武器（黄色秘宝） ===== */
+  { id: 'daodun',  name: '刀盾',   unitType: '盾', type: 'fun', quality: 'yellow', maxLv: 20,
     unlock: { type: 'diamond', cost: 200 },
     special: { '单位血量+20%': true, hpBonus: 0.20 } },
-  { id: 'hangbao', name: '夯爆',   unitType: '爆', type: 'fun', quality: 'gold', maxLv: 20, icon: '🔨💣',
+  { id: 'hangbao', name: '夯爆',   unitType: '爆', type: 'fun', quality: 'yellow', maxLv: 20,
     unlock: { type: 'diamond', cost: 200 },
     special: { '爆炸范围+30%': true, aoeBonus: 0.30 } },
-  { id: 'tuiqian', name: '退钱',   unitType: '退', type: 'fun', quality: 'gold', maxLv: 20, icon: '💰',
+  { id: 'tuiqian', name: '退钱',   unitType: '退', type: 'fun', quality: 'yellow', maxLv: 20,
     unlock: { type: 'diamond', cost: 200 },
     special: { '击退距离+50%': true, knockBonus: 0.50 } },
-  { id: 'tulong',  name: '屠龙刀', unitType: '切', type: 'fun', quality: 'gold', maxLv: 20, icon: '🗡️🐉',
+  { id: 'tulong',  name: '屠龙刀', unitType: '切', type: 'fun', quality: 'yellow', maxLv: 20,
     unlock: { type: 'diamond', cost: 400 },
     special: { '对BOSS伤害+50%': true, bossBonus: 0.50 } },
 

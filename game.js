@@ -1155,12 +1155,12 @@ function draw() {
   ctx.save();
   if (S.shake > 0) { ctx.translate((Math.random()-.5)*S.shake, (Math.random()-.5)*S.shake); S.shake *= 0.86; }
   
-  // ===== 中国风背景 =====
+  // ===== 背景 =====
   const bgColors = {
-    1: { top: '#f0e6c8', mid: '#e8dcc0', bot: '#d4c296' },
-    2: { top: '#f5e6d3', mid: '#e8d0b0', bot: '#d9b896' },
-    3: { top: '#e8e0f0', mid: '#d8c8e0', bot: '#c8b8d0' },
-    4: { top: '#f8f0e0', mid: '#f0e0c8', bot: '#e0d0b0' },
+    1: { top: '#f8ecd0', mid: '#f0e0b8', bot: '#e8d4a0' },
+    2: { top: '#f8e8d0', mid: '#f0d8b0', bot: '#e8c898' },
+    3: { top: '#f0e8f8', mid: '#e4d8f0', bot: '#d8c8e8' },
+    4: { top: '#faf0d8', mid: '#f4e4c0', bot: '#ecd4a8' },
   };
   const bc = bgColors[S.chapter] || bgColors[1];
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
@@ -1324,17 +1324,17 @@ function draw() {
     
     // 格子背景
     roundRect(-cw/2, -ch/2, cw, ch, cr);
-    ctx.fillStyle = u ? '#fff8e8' : 'rgba(255,248,230,0.3)';
+    ctx.fillStyle = u ? '#fff8e8' : '#f5ecd4';
     ctx.fill();
     
     // 木纹边框
     ctx.lineWidth = 3;
-    ctx.strokeStyle = u ? '#c49a48' : 'rgba(196,154,72,0.5)';
+    ctx.strokeStyle = u ? '#c49a48' : '#c9a878';
     ctx.stroke();
     
     // 内边框（装饰线）
     ctx.lineWidth = 1;
-    ctx.strokeStyle = u ? 'rgba(196,154,72,0.4)' : 'rgba(196,154,72,0.2)';
+    ctx.strokeStyle = u ? 'rgba(196,154,72,0.4)' : 'rgba(201,168,120,0.5)';
     roundRect(-cw/2 + 4, -ch/2 + 4, cw - 8, ch - 8, cr - 2);
     ctx.stroke();
     
@@ -2293,72 +2293,52 @@ function renderEquipGrid() {
     card.innerHTML = `
       <div class="wp-level">Lv.${lv}</div>
       <div class="wp-name">${w.name}</div>
-      <div class="wp-big">${bigText}<span class="wp-icon">${w.icon || ''}</span></div>
-      <div class="wp-atk">攻击 <b>${atkVal}</b></div>
-      <div class="wp-upgrade-btn ${isMax ? 'max' : ''}">
-        ${isMax ? '已满级' : (unlocked ? '💰 ' + formatNumber(cost) : '🔒 未解锁')}
-      </div>
+      <div class="wp-big">${bigText}</div>
     `;
 
-    if (unlocked && !isMax) {
-      card.querySelector('.wp-upgrade-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const result = SaveMgr.upgradeWeapon(w.id);
-        if (result.ok) {
-          toast(`升级成功！Lv.${result.newLevel}`);
-          renderEquipGrid();
-          updateAllResourceUI();
-        } else {
-          toast(result.msg);
-        }
-      });
-    } else if (!unlocked && w.unlock?.type === 'diamond') {
-      // 钻石解锁的武器
-      card.classList.remove('locked');
-      const btn = card.querySelector('.wp-upgrade-btn');
-      btn.classList.remove('max');
-      btn.textContent = '💎 ' + w.unlock.cost + ' 解锁';
-      btn.style.background = 'linear-gradient(180deg, #60a5fa, #3b82f6)';
-      btn.style.borderColor = '#2563eb';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (SaveMgr.spendDiamond(w.unlock.cost)) {
-          SaveMgr.unlockWeapon(w.id);
-          toast(`解锁成功：${w.name}！`);
-          renderEquipGrid();
-          updateAllResourceUI();
-        } else {
-          toast('钻石不足！');
-        }
-      });
-    } else if (!unlocked && w.unlock?.type === 'weapon') {
-      // 需要先拥有基础武器 + 钻石解锁的神级武器
-      const hasBase = SaveMgr.get().unlockedWeapons?.includes(w.unlock.weaponId);
-      card.classList.remove('locked');
-      const btn = card.querySelector('.wp-upgrade-btn');
-      btn.classList.remove('max');
-      if (hasBase) {
-        btn.textContent = '💎 ' + w.unlock.costDiamond + ' 觉醒';
-        btn.style.background = 'linear-gradient(180deg, #ff8c42, #f97316)';
-        btn.style.borderColor = '#ea580c';
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (SaveMgr.spendDiamond(w.unlock.costDiamond)) {
+    card.addEventListener('click', () => {
+      if (!unlocked) {
+        if (w.unlock?.type === 'diamond') {
+          if (SaveMgr.spendDiamond(w.unlock.cost)) {
             SaveMgr.unlockWeapon(w.id);
-            toast(`觉醒成功：${w.name}！`);
+            toast(`解锁成功：${w.name}！`);
             renderEquipGrid();
             updateAllResourceUI();
           } else {
             toast('钻石不足！');
           }
-        });
-      } else {
-        btn.textContent = '需先解锁前置';
-        btn.style.background = 'linear-gradient(180deg, #8b7355, #6b5a40)';
-        btn.style.borderColor = '#5a4a30';
-        btn.style.color = '#d4c4a0';
+        } else if (w.unlock?.type === 'weapon') {
+          const hasBase = SaveMgr.get().unlockedWeapons?.includes(w.unlock.weaponId);
+          if (hasBase) {
+            if (SaveMgr.spendDiamond(w.unlock.costDiamond)) {
+              SaveMgr.unlockWeapon(w.id);
+              toast(`觉醒成功：${w.name}！`);
+              renderEquipGrid();
+              updateAllResourceUI();
+            } else {
+              toast('钻石不足！');
+            }
+          } else {
+            toast('需先解锁前置武器！');
+          }
+        } else {
+          toast('未解锁');
+        }
+        return;
       }
-    }
+      if (isMax) {
+        toast('已满级！');
+        return;
+      }
+      const result = SaveMgr.upgradeWeapon(w.id);
+      if (result.ok) {
+        toast(`升级成功！Lv.${result.newLevel}`);
+        renderEquipGrid();
+        updateAllResourceUI();
+      } else {
+        toast(result.msg);
+      }
+    });
 
     grid.appendChild(card);
   });

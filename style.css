@@ -14,7 +14,7 @@ html, body {
 #app {
   height: 100%; display: flex; flex-direction: column;
   max-width: 560px; margin: 0 auto;
-  background: #f0e6c8;
+  background: #f8ecd0;
   position: relative;
   border-left: 4px solid #8b5a2b;
   border-right: 4px solid #8b5a2b;
@@ -209,27 +209,14 @@ html, body {
   color: #fff; 
 }
 
-/* ---------- Shop (卷轴风格) ---------- */
+/* ---------- Shop ---------- */
 #shop {
   flex: 0 0 220px; min-height: 220px;
-  background: linear-gradient(180deg, #f0e2c0, #e5d3a8);
-  border-top: none;
+  background: linear-gradient(180deg, #f5e6c8, #e8d6a8);
+  border-top: 2px solid #c9a878;
   padding: 0 12px calc(12px + env(safe-area-inset-bottom));
   overflow: hidden;
   position: relative;
-}
-#shop::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 4px;
-  background: linear-gradient(180deg, #8b5a2b, #6b4a1b);
-}
-#shop::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0; height: 14px;
-  background: linear-gradient(0deg, #8b5a2b, #a06030);
-  border-radius: 0 0 8px 8px;
 }
 #shop.hidden { display: none; }
 #shopHead {
@@ -691,36 +678,28 @@ html, body {
 }
 .plus-btn:active { transform: scale(0.9); }
 
-/* 卷轴标题 */
+/* 标题栏 */
 .view-scroll-title {
   display: flex; align-items: center; justify-content: center;
-  padding: 12px 0;
+  padding: 10px 0;
   position: relative;
   flex-shrink: 0;
-}
-.view-scroll-title::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; height: 12px;
-  background: linear-gradient(180deg, #8b5a2b, #a06830);
-}
-.view-scroll-title::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0; height: 10px;
-  background: linear-gradient(0deg, #8b5a2b, #a06830);
+  background: linear-gradient(180deg, #a06830, #8b5a2b);
+  border-top: 2px solid #c9a878;
+  border-bottom: 2px solid #6b4520;
 }
 .title-ornament {
   font-size: 18px;
-  color: #8b5a2b;
+  color: #f4c95d;
   z-index: 2;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 .title-text {
   font-size: 20px; font-weight: 900;
-  color: #543818;
+  color: #fff4d6;
   letter-spacing: 8px;
   margin: 0 20px;
-  text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
   z-index: 2;
   position: relative;
 }
@@ -735,104 +714,70 @@ html, body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-  background: linear-gradient(180deg, #f5e6c8, #e8d6a8);
+  background: linear-gradient(180deg, #f8ecd0, #f0e0b8);
   -webkit-overflow-scrolling: touch;
 }
 .weapon-card {
   display: flex; flex-direction: column;
-  background: linear-gradient(180deg, #f8f0e0, #e8dcc0);
+  background: linear-gradient(180deg, #fff4dc, #f5e6c0);
   border: 3px solid #c9a878;
-  border-radius: 10px;
-  padding: 6px 4px;
+  border-radius: 14px;
+  padding: 4px 2px 6px;
   position: relative;
   cursor: pointer;
   transition: transform .15s, box-shadow .15s;
   box-shadow: 0 3px 6px rgba(139,90,43,0.2);
   overflow: hidden;
+  aspect-ratio: 1 / 1;
 }
 .weapon-card:active { transform: scale(0.96); }
 .weapon-card .wp-level {
   position: absolute;
-  top: 2px; left: 4px;
-  font-size: 11px; font-weight: 900;
+  top: 4px; left: 6px;
+  font-size: 13px; font-weight: 900;
   color: #543818;
   text-shadow: 0 1px 1px rgba(255,255,255,0.6);
+  z-index: 2;
 }
 .weapon-card .wp-name {
-  font-size: 12px; font-weight: 800;
+  font-size: 14px; font-weight: 800;
   color: #543818;
   text-align: center;
-  margin-bottom: 4px;
+  margin-top: 4px;
+  margin-bottom: 2px;
 }
 .weapon-card .wp-big {
   flex: 1;
   display: flex; align-items: center; justify-content: center;
-  font-size: 28px; font-weight: 900;
-  color: #3a2a18;
+  font-size: 32px; font-weight: 900;
+  color: #2a1a10;
   font-family: "STKaiti", "KaiTi", "楷体", serif;
-  letter-spacing: -2px;
   line-height: 1;
-  margin: 4px 0;
   text-shadow: 1px 1px 0 rgba(255,255,255,0.5);
   position: relative;
 }
-.weapon-card .wp-icon {
-  position: absolute;
-  right: 2px; bottom: 0;
-  font-size: 14px;
-}
-.weapon-card .wp-atk {
-  text-align: center;
-  font-size: 11px; font-weight: 700;
-  color: #8b5a2b;
-  margin-bottom: 4px;
-}
-.weapon-card .wp-atk b { color: #b85c28; font-size: 13px; }
-.weapon-card .wp-upgrade-btn {
-  background: linear-gradient(180deg, #d8542f, #b83c1a);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 4px 0;
-  font-size: 11px; font-weight: 800;
-  cursor: pointer;
-  text-align: center;
-  box-shadow: 0 2px 4px rgba(176,56,32,0.3);
-  border: 1px solid #8b2818;
-}
-.weapon-card .wp-upgrade-btn.max {
-  background: linear-gradient(180deg, #8b7355, #6b5a40);
-  color: #d4c4a0;
-  border-color: #5a4a30;
-  box-shadow: none;
-}
-.weapon-card .wp-upgrade-btn:active:not(.max) {
-  transform: scale(0.95);
-}
 
 /* 品质颜色 */
-.weapon-card.quality-green  { border-color: #4ade80; background: linear-gradient(180deg, #e8f8ee, #d0efd8); }
+.weapon-card.quality-green  { border-color: #54a868; background: linear-gradient(180deg, #e8f5ec, #cce8d4); }
 .weapon-card.quality-blue   { border-color: #60a5fa; background: linear-gradient(180deg, #e8f0fc, #d0e0f5); }
 .weapon-card.quality-purple { border-color: #c084fc; background: linear-gradient(180deg, #f3e8fc, #e4d0f5); }
-.weapon-card.quality-gold   { border-color: #f4c95d; background: linear-gradient(180deg, #fef6e0, #f4e4b0); box-shadow: 0 3px 8px rgba(244,201,93,0.4); }
-.weapon-card.quality-orange { border-color: #ff8c42; background: linear-gradient(180deg, #fff0e4, #ffd8b8); box-shadow: 0 3px 10px rgba(255,140,66,0.4); }
-.weapon-card.quality-mythic {
-  border-color: #ff6b9d;
-  background: linear-gradient(135deg, #fff0f5, #ffe0f0, #f0e0ff);
-  box-shadow: 0 3px 12px rgba(255,107,157,0.4);
-}
+.weapon-card.quality-gold   { border-color: #f4c95d; background: linear-gradient(180deg, #fef6e0, #f4e4b0); }
+.weapon-card.quality-orange { border-color: #ff8c42; background: linear-gradient(180deg, #fff0e4, #ffd8b8); }
+.weapon-card.quality-yellow { border-color: #ffd93d; background: linear-gradient(180deg, #fff9e0, #fff0b0); }
 .weapon-card.locked {
-  filter: grayscale(80%) brightness(0.6);
+  filter: grayscale(70%) brightness(0.55);
   pointer-events: none;
+  position: relative;
 }
 .weapon-card.locked::after {
   content: '🔒';
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 28px;
+  font-size: 32px;
   z-index: 5;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  filter: grayscale(0%) brightness(1);
+  text-shadow: 0 2px 6px rgba(0,0,0,0.5);
 }
 
 /* ============================================================
@@ -842,7 +787,7 @@ html, body {
   flex: 1;
   overflow-y: auto;
   padding: 20px 10px calc(20px + env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, #f5e6c8, #e8d6a8);
+  background: linear-gradient(180deg, #f8ecd0, #f0e0b8);
   display: flex;
   justify-content: space-around;
   -webkit-overflow-scrolling: touch;
