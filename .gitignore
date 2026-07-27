@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Capacitor platforms (generated on build)
+ios/
+android/
+
+# Build outputs
+dist/
+build/
+output/
+*.ipa
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcuserstate
+*.xcuserdatad
+DerivedData/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# iOS
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.pbxuser
+default.perspectivev3
+xcuserdata
+*.xccheckout
+*.xcscmblueprint
+*.mobileprovision
+*.p12
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db

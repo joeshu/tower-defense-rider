@@ -1,0 +1,14 @@
+{
+  "name": "tower-defense-rider",
+  "version": "1.0.0",
+  "description": "骑马走格塔防游戏 - 你玩不过我吧",
+  "scripts": {
+    "build": "echo 'No build step needed - static site'",
+    "start": "python -m http.server 8000"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
+  }
+}

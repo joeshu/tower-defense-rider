@@ -1,0 +1,25 @@
+{
+  "appId": "com.example.towerdefense",
+  "appName": "你玩不过我吧",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "always",
+    "scheme": "App",
+    "webContentsDebuggingEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": true
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#00000000"
+    }
+  }
+}

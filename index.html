@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>你玩不过我吧 · 骑马走格版</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- 顶部状态栏 -->
+  <div id="topbar">
+    <div class="tb-item chapter-tag" id="tbChapter">第1关</div>
+    <div class="tb-item heart">❤️ <span id="tbHp">100</span></div>
+    <div class="tb-item gold">💰 <span id="tbGold">0</span></div>
+    <div class="tb-item" id="tbWave">第1/6波</div>
+    <!-- 倍速按钮 -->
+    <div id="speedBar">
+      <button class="spd-btn active" data-spd="1">1×</button>
+      <button class="spd-btn" data-spd="2">2×</button>
+    </div>
+  </div>
+
+  <!-- 章节进度条 -->
+    <div id="chapterTrack">
+      <span id="chapterName">黄风岭</span>
+      <div id="chapterDots"></div>
+      <span id="goalText">骑马单位巡视格子</span>
+    </div>
+
+  <!-- 关卡横幅（动态插入） -->
+  <div id="levelBanner" class="hidden"></div>
+
+  <!-- 骑马面板（动态插入） -->
+  <div id="riderPanel" class="hidden"></div>
+
+  <!-- 主画布 -->
+  <canvas id="cv"></canvas>
+
+  <!-- 单位信息栏 -->
+  <div id="infoBar" class="hidden">
+    <span id="infoText"></span>
+    <button id="btnSell">出售</button>
+    <button id="btnCancel">取消</button>
+  </div>
+
+  <!-- 商店 -->
+  <div id="shop">
+    <div id="shopHead">
+      <span id="shopTitle">商店 · 补充阵地</span>
+      <button id="btnReroll">刷新 -2💰</button>
+    </div>
+    <div id="cards"></div>
+    <div id="shopFoot">
+      <div id="hint">🐴 骑马单位已永久在场，路过友军召唤镜像！点卡牌→点格子放置兵种</div>
+      <button id="btnFight">开 战 ⚔️</button>
+    </div>
+  </div>
+
+  <!-- 战斗进度条 -->
+  <div id="battleBar" class="hidden">
+    <div id="waveProg"><div id="waveProgFill"></div></div>
+    <span id="battleText">妖怪来袭…</span>
+  </div>
+
+  <!-- 弹窗 -->
+  <div id="overlay">
+    <div id="ovBox">
+      <h1 id="ovTitle">你玩不过我吧</h1>
+      <p id="ovDesc">守住中间的「心」！<br>🐴 骑马单位永久在场巡视格子，<br>路过友军可召唤镜像出战，<br>根据战况自动释放骑术技能！</p>
+      <button id="ovBtn">开始挑战</button>
+    </div>
+  </div>
+</div>
+
+<!-- 脚本：先加载配置和骑马模块，再加载主逻辑 -->
+<script src="levels.js"></script>
+<script src="mobile.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

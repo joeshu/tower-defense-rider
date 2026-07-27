@@ -1,0 +1,115 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build Unsigned iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Initialize Capacitor iOS platform
+        run: |
+          npx cap add ios
+
+      - name: Capacitor sync
+        run: |
+          npx cap sync ios
+
+      - name: Configure project (app display name, language)
+        run: |
+          cd ios/App
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDevelopmentRegion zh_CN" App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 你玩不过我吧" App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" App/Info.plist || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" App/Info.plist || true
+          echo "Project configured"
+
+      - name: Build .app (unsigned, skip signing)
+        run: |
+          cd ios/App
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            EXPAND_CODE_SIGN_VARIABLES=NO
+
+      - name: Find .app and create unsigned IPA
+        run: |
+          # Find the built .app
+          APP_PATH=$(find ios/App/build -name "*.app" -type d | grep -v "AppBundle" | grep -v "PlugIns" | head -1)
+          echo "Found app at: $APP_PATH"
+          ls -la "$APP_PATH"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: .app not found!"
+            find ios/App/build -name "*.app" -type d
+            exit 1
+          fi
+
+          # Remove code signature if any
+          if [ -d "$APP_PATH/_CodeSignature" ]; then
+            rm -rf "$APP_PATH/_CodeSignature"
+            echo "Removed _CodeSignature"
+          fi
+
+          # Create IPA structure: Payload/App.app
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+
+          # Zip into IPA
+          zip -r tower-defense-rider.ipa Payload/
+
+          echo "IPA created successfully"
+          ls -lh tower-defense-rider.ipa
+
+          # Verify IPA structure
+          unzip -l tower-defense-rider.ipa | head -20
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-unsigned
+          path: tower-defense-rider.ipa
+          retention-days: 30
+
+      - name: Upload to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tower-defense-rider.ipa
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

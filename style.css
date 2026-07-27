@@ -1,0 +1,273 @@
+/* ============================================================
+ * style.css —— 你玩不过我吧 · 复刻版（格子走格·骑马系统）
+ * ============================================================ */
+
+/* ---------- Reset & Base ---------- */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%; overflow: hidden;
+  background: #1a1825;
+  font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#app {
+  height: 100%; display: flex; flex-direction: column;
+  max-width: 560px; margin: 0 auto;
+  background: #e8dcc0;
+  position: relative;
+}
+
+/* ---------- Top Bar ---------- */
+#topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px 4px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+  color: #544634; font-size: 14px; font-weight: 800;
+}
+.tb-item.gold { color: #9b6b1e; }
+.tb-item.heart { color: #b63d3d; }
+.tb-item.chapter-tag {
+  background: linear-gradient(135deg, #6b3a2a, #8b5a3a);
+  color: #f4c95d; padding: 2px 10px; border-radius: 10px;
+  font-size: 12px; font-weight: 900;
+}
+
+/* ---------- Chapter Track ---------- */
+#chapterTrack {
+  flex: 0 0 24px; display: flex; align-items: center; gap: 7px;
+  padding: 0 14px 4px; color: #8d8068; font-size: 10px;
+}
+#chapterName { white-space: nowrap; color: #bda46e; font-weight: 800; }
+#chapterDots {
+  flex: 1; height: 4px; border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #655842 0 14px, transparent 14px 20px);
+  opacity: .75;
+}
+#goalText { white-space: nowrap; color: #c9a85f; font-weight: 700; }
+
+/* ---------- Canvas ---------- */
+#cv {
+  flex: 1 1 0; min-height: 0; width: 100%;
+  touch-action: none; display: block;
+}
+
+/* ---------- Info Bar ---------- */
+#infoBar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; background: #221f2b; color: #e8dfc8; font-size: 12px;
+}
+#infoBar.hidden { display: none; }
+#infoBar button {
+  border: none; border-radius: 8px; padding: 6px 12px;
+  font-size: 13px; font-weight: 700;
+}
+#btnSell { background: #a04040; color: #fff; }
+#btnCancel { background: #3a3a48; color: #ccc; }
+
+/* ---------- Shop ---------- */
+#shop {
+  flex: 0 0 200px; min-height: 200px;
+  background: #1e1b26; border-top: 2px solid #3a3450;
+  padding: 7px 12px calc(8px + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+#shop.hidden { display: none; }
+#shopHead {
+  display: flex; justify-content: space-between; align-items: center;
+  height: 28px; margin-bottom: 5px;
+}
+#shopTitle { color: #bfae8a; font-size: 13px; font-weight: 700; }
+#btnReroll {
+  background: #34405c; color: #cfe0ff; border: none;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700;
+}
+#btnReroll:disabled { opacity: .4; }
+
+/* ---------- Cards ---------- */
+#cards {
+  display: flex; gap: 8px; justify-content: center;
+  height: 88px; margin-bottom: 6px;
+}
+.card {
+  flex: 1; max-width: 110px; height: 88px; overflow: hidden;
+  background: linear-gradient(160deg, #f7eed8, #e6d6b0);
+  border-radius: 12px; padding: 5px 4px; text-align: center;
+  border: 3px solid transparent; position: relative;
+  transition: transform .12s, box-shadow .12s;
+  cursor: pointer;
+}
+.card:active { transform: scale(0.96); }
+.card.sel {
+  border-color: #f4c95d; transform: translateY(-4px);
+  box-shadow: 0 6px 18px rgba(244,201,93,.35);
+}
+.card.sold { opacity: .25; pointer-events: none; }
+.card .ch {
+  font-size: 30px; font-weight: 900; color: #2a2118; line-height: 1.05;
+}
+.card .nm { font-size: 10px; color: #6b5a3e; margin-top: 1px; white-space: nowrap; }
+.card .pr { margin-top: 2px; font-size: 12px; font-weight: 800; color: #a0691e; }
+.card .tag {
+  position: absolute; top: -8px; right: -4px;
+  background: #c9483c; color: #fff; font-size: 10px;
+  border-radius: 8px; padding: 2px 6px; font-weight: 700;
+}
+.card .tag.combo { background: #7a5cc9; }
+.card .tag.rider { background: #d4882a; }   /* 骑马标签 */
+.card .tag.new   { background: #4fc07a; }   /* 新解锁标签 */
+
+/* ---------- Shop Footer ---------- */
+#shopFoot { height: 50px; display: flex; align-items: center; gap: 8px; }
+#hint { flex: 1; color: #7d7590; font-size: 10px; line-height: 1.3; }
+#btnFight {
+  background: linear-gradient(160deg, #d8542f, #a83220); color: #fff;
+  border: none; border-radius: 10px; padding: 10px 17px;
+  font-size: 16px; font-weight: 900; letter-spacing: 1px;
+  box-shadow: 0 4px 14px rgba(216,84,47,.4);
+}
+#btnFight:active { transform: scale(.96); }
+
+/* ---------- Battle Bar ---------- */
+#battleBar {
+  background: #1e1b26; border-top: 2px solid #3a3450;
+  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 12px;
+}
+#battleBar.hidden { display: none; }
+#waveProg { flex: 1; height: 8px; background: #33303e; border-radius: 4px; overflow: hidden; }
+#waveProgFill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #d8542f, #f4c95d);
+  border-radius: 4px; transition: width .3s;
+}
+#battleText { color: #bfae8a; font-size: 13px; font-weight: 700; white-space: nowrap; }
+
+/* ---------- Speed Buttons ---------- */
+#speedBar {
+  display: flex; gap: 4px; align-items: center;
+}
+.spd-btn {
+  background: #2a2740; color: #8a82a0; border: 1px solid #3a3450;
+  border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700;
+  cursor: pointer;
+}
+.spd-btn.active { background: #4a3a6a; color: #f4c95d; border-color: #7a5cc9; }
+
+/* ---------- Rider Status Panel ---------- */
+#riderPanel {
+  position: absolute; bottom: 210px; right: 8px;
+  background: rgba(34,31,43,.92); border-radius: 10px;
+  padding: 6px 10px; color: #e8dfc8; font-size: 11px;
+  z-index: 10; min-width: 120px; max-height: 70vh; overflow-y: auto;
+  border: 1px solid #4a3a6a;
+}
+#riderPanel.hidden { display: none; }
+#riderPanel .rp-title {
+  color: #f4c95d; font-weight: 900; font-size: 12px;
+  margin-bottom: 3px; text-align: center;
+}
+#riderPanel .rp-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin: 2px 0;
+}
+#riderPanel .rp-label { color: #bfae8a; }
+#riderPanel .rp-val { color: #ffb84f; font-weight: 700; }
+#riderPanel .rp-sep {
+  color: #7a6a90; font-size: 10px; text-align: center;
+  margin: 4px 0 2px; border-top: 1px solid #3a3450; padding-top: 3px;
+}
+#riderPanel .rp-skill {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 2px 4px; margin: 2px 0;
+  border-left: 3px solid #555; border-radius: 0 4px 4px 0;
+  font-size: 10px;
+}
+#riderPanel .rp-skill.ready { background: rgba(79,192,122,.12); }
+#riderPanel .rp-skill.cooling { opacity: .5; }
+#riderPanel .rp-skill.just { background: rgba(244,201,93,.2); animation: pulse .6s ease 2; }
+#riderPanel .rp-sk-name { color: #e8dfc8; font-weight: 700; }
+#riderPanel .rp-sk-cd { color: #ffb84f; font-weight: 700; }
+#riderPanel .rp-skill.ready .rp-sk-cd { color: #4fc07a; }
+
+/* ---------- Level Info Banner ---------- */
+#levelBanner {
+  position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+  background: rgba(20,16,30,.9); border-radius: 12px;
+  padding: 8px 18px; color: #f4c95d; font-size: 13px; font-weight: 700;
+  z-index: 10; text-align: center; max-width: 300px;
+  border: 1px solid #4a3a6a;
+}
+#levelBanner.hidden { display: none; }
+#levelBanner .lb-title { font-size: 15px; font-weight: 900; margin-bottom: 3px; }
+#levelBanner .lb-rule { color: #ff9a6a; font-size: 11px; }
+
+/* ---------- Overlay ---------- */
+#overlay {
+  position: fixed; inset: 0;
+  background: rgba(10,8,16,.88);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; backdrop-filter: blur(6px);
+}
+#overlay.hidden { display: none; }
+#ovBox {
+  text-align: center; padding: 36px 28px; max-width: 340px;
+  background: rgba(30,27,38,.95); border-radius: 20px;
+  border: 2px solid #4a3a6a;
+}
+#ovBox h1 {
+  color: #f4c95d; font-size: 30px; margin-bottom: 14px;
+  letter-spacing: 3px; text-shadow: 0 0 24px rgba(244,201,93,.4);
+}
+#ovBox p {
+  color: #cfc6b0; font-size: 14px; line-height: 1.8; margin-bottom: 22px;
+}
+#ovBtn {
+  background: linear-gradient(160deg, #d8542f, #a83220); color: #fff;
+  border: none; border-radius: 14px; padding: 14px 40px;
+  font-size: 18px; font-weight: 900; letter-spacing: 2px;
+}
+#ovBtn:active { transform: scale(.96); }
+
+/* ---------- Toast ---------- */
+#toast {
+  position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+  background: rgba(244,201,93,.95); color: #2a2118;
+  padding: 8px 20px; border-radius: 10px; font-size: 14px; font-weight: 800;
+  z-index: 100; pointer-events: none;
+  animation: toastIn .3s ease, toastOut .3s ease 1.5s forwards;
+}
+#toast.hidden { display: none; }
+@keyframes toastIn  { from { opacity:0; transform:translate(-50%,-10px);} to { opacity:1; transform:translate(-50%,0);} }
+@keyframes toastOut { from { opacity:1;} to { opacity:0; transform:translate(-50%,-10px);} }
+
+/* Rider running trail effect on canvas - CSS overlay hint */
+.rider-born {
+  animation: popIn .3s ease, pulse 1s ease 3;
+}
+
+/* Charge building indicator */
+#riderPanel .rp-val.charging {
+  color: #ffb84f;
+  text-shadow: 0 0 8px rgba(255,184,79,.6);
+}
+
+/* ---------- Animations ---------- */
+@keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+@keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+@keyframes slideUp { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+@keyframes popIn { 0%{transform:scale(0);} 70%{transform:scale(1.1);} 100%{transform:scale(1);} }
+
+.card.sel { animation: popIn .2s ease; }
+#ovBox { animation: slideUp .4s ease; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 360px) {
+  .card { max-width: 90px; }
+  .card .ch { font-size: 24px; }
+  #shop { flex-basis: 180px; }
+}
+@media (max-height: 600px) {
+  #shop { flex-basis: 160px; }
+  #cards { height: 72px; }
+}
