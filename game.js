@@ -33,6 +33,13 @@ const UNITS = {
   '切': { cost: 3, name: '切·快刀', atk: 16, range: 1,  aspd: 1.0, hp: 80,  color: '#d0704f', desc: '近战高伤' },
   '盾': { cost: 2, name: '盾·壁垒', atk: 4,  range: 1,  aspd: 0.6, hp: 240, color: '#8a8f9c', desc: '高血量吸引敌人' },
   '速': { cost: 3, name: '速·战鼓', atk: 0,  range: 0,  aspd: 0,   hp: 55,  color: '#4fc07a', desc: '相邻友军攻速+35%/级' },
+  // 新增原版兵种
+  '疗': { cost: 4, name: '疗·医仙', atk: 0,  range: 0,  aspd: 0,   hp: 60,  color: '#4ade80', desc: '治疗相邻友军', heal: true },
+  '退': { cost: 3, name: '退·力士', atk: 10, range: 1,  aspd: 0.8, hp: 90,  color: '#60a5fa', desc: '击退敌人', knockback: true },
+  '神': { cost: 6, name: '神·战神', atk: 25, range: 2,  aspd: 0.7, hp: 100, color: '#fbbf24', desc: '神圣攻击·克制妖', counter: '妖' },
+  '豪': { cost: 8, name: '豪·财神', atk: 18, range: 2,  aspd: 0.9, hp: 85,  color: '#f59e0b', desc: '击杀掉落额外金币', goldDrop: true },
+  '娥': { cost: 5, name: '娥·嫦娥', atk: 14, range: 4,  aspd: 0.8, hp: 50,  color: '#ec4899', desc: '远程月光攻击', moon: true },
+  '爆': { cost: 5, name: '爆·炸弹', atk: 0,  range: 0,  aspd: 0,   hp: 50,  color: '#ef4444', desc: '死亡时爆炸伤害', explode: true },
   // 元素兵种
   '雷': { cost: 4, name: '雷·天师', atk: 15, range: 3,  aspd: 0.8, hp: 50,  color: '#ffd700', desc: '闪电链攻击多个目标', aoe: 2 },
   '冰': { cost: 4, name: '冰·寒士', atk: 10, range: 2,  aspd: 0.7, hp: 60,  color: '#4fd0f8', desc: '减速敌人50%', slow: true },
@@ -200,7 +207,17 @@ function recompute() {
 function makeUnit(ch) {
   const d = UNITS[ch];
   return { ch, lv: 1, hp: d.hp, maxHp: d.hp, cd: 0, healT: 0, combo: false, partner: -1, aura: 1, dead: false, rallyBuff: 0,
-    comboSkillCd: 0, comboSkillT: 0, comboCharge: 0 };
+    comboSkillCd: 0, comboSkillT: 0, comboCharge: 0, charge: 0, maxCharge: MIRROR_CHARGE_MAX };
+}
+
+/* 可生成镜像的兵种判定：合成单位 或 武械栏携带的特殊兵种 */
+const MIRROR_CHARGE_MAX = 100;
+const MIRROR_SPECIAL_TYPES = new Set(['神','豪','娥','爆','退','疗','弓','炮']);  // 特殊兵种可充能
+function canMirrorUnit(u) {
+  if (!u) return false;
+  const d = UNITS[u.ch];
+  if (!d || !d.atk || d.atk <= 0) return false;
+  return u.combo || MIRROR_SPECIAL_TYPES.has(u.ch);
 }
 
 function effStat(u) {
@@ -214,25 +231,43 @@ function effStat(u) {
   if (u.combo && (u.ch === '申' || u.ch === '豹')) { atk = 16 * m; range = 2; aspd = 0.95 * u.aura; }
   if (u.combo && (u.ch === '沙')) { atk = 8 * m; range = 2; aspd = 0.8 * u.aura; }
   if (u.rallyBuff > 0 && u.combo) { aspd *= 1.4; }
+
+  // ===== 武器和天赋加成 =====
+  if (typeof calcUnitFinalStats === 'function' && typeof SaveMgr !== 'undefined') {
+    const baseAtk = d.atk || 1;
+    const finalStats = calcUnitFinalStats(u);
+    const atkMul = finalStats.atk / Math.max(1, baseAtk);
+    atk *= atkMul;
+  }
+
   return { atk, range, aspd, splash };
 }
 
-function unitMaxHp(u) { return UNITS[u.ch].hp * Math.pow(1.5, u.lv - 1); }
+function unitMaxHp(u) {
+  let hp = UNITS[u.ch].hp * Math.pow(1.5, u.lv - 1);
+  // 武器和天赋加成
+  if (typeof calcUnitFinalStats === 'function' && typeof SaveMgr !== 'undefined') {
+    const baseHp = UNITS[u.ch].hp || 1;
+    const finalStats = calcUnitFinalStats(u);
+    const hpMul = finalStats.hp / Math.max(1, baseHp);
+    hp *= hpMul;
+  }
+  return hp;
+}
 
 /* ============ 商店 ============ */
 const cardsEl = document.getElementById('cards');
 function shopPool() {
   const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
   const unlocked = S.unlockedTypes.length > 0 ? S.unlockedTypes : ['箭','切','盾','速'];
-  // 权重：基础单位更高，元素兵种次之，进阶兵种较低，半字最低
   const weights = { 
     '箭':3,'切':3,'盾':3,'速':2,'枪':2,
+    '疗':2,'退':2,'神':1,'豪':1,'娥':1,'爆':2,
     '雷':2,'冰':2,'火':2,'毒':2,'奶':2,
     '弓':1,'炮':1,'刺':1,'甲':1,'锤':1,
     '唐':2,'僧':2,'悟':1,'空':1,'八':2,'戒':2,'沙':1,
     '姜':1,'牙':1,'申':1,'豹':1,'吒':1 
   };
-  // 关卡规则禁用过滤
   const banned = new Set();
   if (lv.rule) {
     if (lv.rule.type === 'no_archer') banned.add('箭');
@@ -289,10 +324,25 @@ function renderCards() {
 const $ = id => document.getElementById(id);
 function syncTop() {
   const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
-  $('tbChapter').textContent = '第' + S.level + '关';
-  $('tbHp').textContent = Math.max(0, Math.ceil(S.heartHp));
+  $('tbChapter').textContent = '第' + S.chapter + '章';
   $('tbGold').textContent = S.gold;
-  $('tbWave').textContent = '第' + S.wave + '/6波';
+  
+  // 波次圆点
+  const waveDots = $('waveDots');
+  if (waveDots) {
+    const dots = waveDots.querySelectorAll('.dot');
+    const totalWaves = 5;
+    const currentWave = Math.min(S.wave, totalWaves);
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i < currentWave);
+    });
+  }
+  
+  // 历史最高波次
+  const save = typeof SaveMgr !== 'undefined' ? SaveMgr.get() : null;
+  $('tbBestWave').textContent = save ? (save.highestWave || 0) : (S.wave - 1);
+  $('tbMaxWave').textContent = 15;
+  
   const chapterNames = {1:'黄风岭', 2:'火焰山', 3:'灵山', 4:'封神台'};
   $('chapterName').textContent = chapterNames[S.chapter] || '';
   const prog = Math.min(100, S.wave / 6 * 100);
@@ -308,6 +358,11 @@ function syncTop() {
   $('goalText').textContent = goal;
   // 骑马面板
   updateRiderPanel();
+  // 基地满血按钮：战斗中且血量低于100%时显示
+  const btnFullHp = $('btnFullHp');
+  if (btnFullHp) {
+    btnFullHp.classList.toggle('hidden', S.phase !== 'battle' || S.heartHp >= S.heartMax);
+  }
 }
 
 function toast(t) {
@@ -436,6 +491,18 @@ document.querySelectorAll('.spd-btn').forEach(btn => {
   };
 });
 
+/* ============ 基地满血按钮 ============ */
+$('btnFullHp').onclick = () => {
+  if (S.phase !== 'battle' || S.heartHp >= S.heartMax) return;
+  const cost = Math.ceil((S.heartMax - S.heartHp) * 0.2);
+  if (S.gold < cost) { toast('金币不够！需要 ' + cost + '💰'); return; }
+  S.gold -= cost;
+  S.heartHp = S.heartMax;
+  S.fx.push({ type: 'combo_buddha_big', x: S.heartX, y: S.heartY, t: 0, r: S.cellSize * 2, dur: 0.8 });
+  S.floats.push({ x: S.heartX, y: S.heartY - 30, t: 0, txt: '❤️基地满血!', color: '#ff6b6b', big: true });
+  syncTop();
+};
+
 /* ============ 波次 ============ */
 function startWave() {
   hideInfo();
@@ -518,6 +585,9 @@ function updateBattle(dt) {
     if (u.comboSkillT > 0) u.comboSkillT -= sdt;
     const st = effStat(u);
     const comboName = u.combo ? UNITS[u.ch].combo : null;
+
+    // ===== 镜魂：骑马踩踏充能机制 =====
+    // 充能满后自动生成镜像（在 onArriveCell 中处理充能递增）
 
     // ===== 唐僧：慈悲为怀（持续治疗）+ 佛光普照（大招） =====
     if (comboName === '唐僧') {
@@ -665,6 +735,51 @@ function updateBattle(dt) {
       return; // 八戒用扇形攻击代替普通攻击
     }
 
+    // ===== 退·力士：击退敌人 =====
+    if (UNITS[u.ch].knockback) {
+      damageEnemy(tg, st.atk, '#60a5fa');
+      tg.knockback = 0.5;
+      tg.knockbackX = (tg.x - cell.px) * 0.6;
+      tg.knockbackY = (tg.y - cell.py) * 0.6;
+      S.fx.push({ type: 'knockback', x: tg.x, y: tg.y, t: 0, dur: 0.4 });
+      return;
+    }
+
+    // ===== 神·战神：神圣攻击·克制妖 =====
+    if (UNITS[u.ch].counter === '妖') {
+      const isYao = tg.ch === '妖';
+      const finalDmg = isYao ? st.atk * 1.8 : st.atk;
+      if (st.range > 1) {
+        S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: finalDmg, splash: st.splash, t: 0, color: '#fbbf24' });
+      } else {
+        damageEnemy(tg, finalDmg, '#fbbf24');
+        S.fx.push({ type: 'slash', x: tg.x, y: tg.y, t: 0 });
+      }
+      if (isYao) {
+        S.floats.push({ x: tg.x, y: tg.y - 16, t: 0, txt: '⚔️克制!', color: '#fbbf24', big: true });
+      }
+      return;
+    }
+
+    // ===== 豪·财神：击杀掉落额外金币 =====
+    if (UNITS[u.ch].goldDrop) {
+      if (st.range > 1) {
+        S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: '#f59e0b', goldDrop: true });
+      } else {
+        damageEnemy(tg, st.atk, '#f59e0b');
+        S.fx.push({ type: 'slash', x: tg.x, y: tg.y, t: 0 });
+      }
+      return;
+    }
+
+    // ===== 娥·嫦娥：月光攻击 =====
+    if (UNITS[u.ch].moon) {
+      S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: '#ec4899', moon: true });
+      return;
+    }
+
+    // ===== 爆·炸弹：死亡时爆炸（在单位死亡时处理） =====
+
     // 普通攻击
     if (st.range > 1) {
       S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: u.combo ? '#ffb84f' : UNITS[u.ch].color });
@@ -683,6 +798,12 @@ function updateBattle(dt) {
       s.done = true;
       if (s.tg && !s.tg.dead) {
         damageEnemy(s.tg, s.dmg, s.splash ? '#ffb84f' : '#cfe8ff');
+        // ===== 豪·财神：击杀掉落额外金币 =====
+        if (s.goldDrop && s.tg.hp <= 0) {
+          const extraGold = Math.floor(Math.random() * 3) + 2;
+          S.gold += extraGold;
+          S.floats.push({ x: s.tg.x, y: s.tg.y - 34, t: 0, txt: '+' + extraGold + '💰', color: '#f59e0b', big: true });
+        }
         if (s.splash) {
           S.fx.push({ type: 'boom', x: s.tg.x, y: s.tg.y, t: 0, r: s.splash });
           S.enemies.forEach(e2 => { if (!e2.dead && e2 !== s.tg && dist(e2.x,e2.y,s.tx,s.ty) < s.splash) damageEnemy(e2, s.dmg*0.6, '#ffb84f'); });
@@ -768,13 +889,21 @@ function updateBattle(dt) {
     if (e.jiangSlow > 0) spdMul *= 0.65;
     if (e.root > 0) spdMul = 0;
 
-    let tgx = S.heartX, tgy = S.heartY, tgCell = null, bd = dist(e.x, e.y, S.heartX, S.heartY);
+    let tgx = S.heartX, tgy = S.heartY, tgCell = null, tgMirror = null, bd = dist(e.x, e.y, S.heartX, S.heartY);
     for (const c of S.cells) {
       if (!c.unit) continue;
       const d = dist(e.x, e.y, c.px, c.py);
-      if (d < bd) { bd = d; tgx = c.px; tgy = c.py; tgCell = c; }
+      if (d < bd) { bd = d; tgx = c.px; tgy = c.py; tgCell = c; tgMirror = null; }
     }
-    const reach = tgCell ? S.cellSize * 0.55 + e.r : S.cellSize * 0.45 + e.r;
+    // 镜像也是攻击目标
+    if (S.riderMirrors) {
+      for (const m of S.riderMirrors) {
+        if (m.dead) continue;
+        const d = Math.hypot(m.x - e.x, m.y - e.y);
+        if (d < bd) { bd = d; tgx = m.x; tgy = m.y; tgCell = null; tgMirror = m; }
+      }
+    }
+    const reach = (tgCell || tgMirror) ? S.cellSize * 0.55 + e.r : S.cellSize * 0.45 + e.r;
     if (bd > reach) {
       const k = (e.spd * spdMul * sdt) / bd;
       e.x += (tgx - e.x) * k; e.y += (tgy - e.y) * k;
@@ -782,7 +911,31 @@ function updateBattle(dt) {
       e.cd -= sdt;
       if (e.cd <= 0) {
         e.cd = 1;
-        if (tgCell) {
+        if (tgMirror) {
+          // ===== 攻击镜像 =====
+          let dmg = e.atk;
+          tgMirror.hp -= dmg;
+          S.floats.push({ x: tgMirror.x, y: tgMirror.y + 10, t: 0, txt: '-' + Math.round(dmg), color: '#ff9a9a' });
+          S.fx.push({ type: 'slash', x: tgMirror.x, y: tgMirror.y, t: 0 });
+          if (tgMirror.hp <= 0) {
+            tgMirror.dead = true;
+            // 爆·炸弹：镜像死亡时爆炸
+            if (UNITS[tgMirror.ch] && UNITS[tgMirror.ch].explode) {
+              const expDmg = 20 * Math.pow(1.5, tgMirror.lv - 1);
+              const expR = S.cellSize * 1.4;
+              S.enemies.forEach(e2 => {
+                if (e2.dead) return;
+                if (dist(e2.x, e2.y, tgMirror.x, tgMirror.y) < expR) {
+                  e2.hp -= expDmg;
+                  S.floats.push({ x: e2.x, y: e2.y - 12, t: 0, txt: '💥' + Math.round(expDmg), color: '#ef4444' });
+                }
+              });
+              S.fx.push({ type: 'boom', x: tgMirror.x, y: tgMirror.y, t: 0, r: expR });
+              S.shake = Math.max(S.shake, 5);
+            }
+            S.fx.push({ type: 'ring', x: tgMirror.x, y: tgMirror.y, t: 0, r: 14, color: tgMirror.color, dur: 0.4 });
+          }
+        } else if (tgCell) {
           let dmg = e.atk;
           const shaCell = S.cells.find(c => c.unit && c.unit.combo && UNITS[c.unit.ch].combo === '沙僧' && adjacent(c, tgCell));
           if (shaCell) {
@@ -812,6 +965,20 @@ function updateBattle(dt) {
               });
               S.fx.push({ type: 'combo_sha_explode', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize * 1.8, dur: 0.7 });
               S.shake = Math.max(S.shake, 8);
+            }
+            // ===== 爆·炸弹：死亡时爆炸 =====
+            if (UNITS[tgCell.unit.ch].explode) {
+              const expDmg = 30 * Math.pow(1.5, tgCell.unit.lv - 1);
+              const expR = S.cellSize * 1.6;
+              S.enemies.forEach(e2 => {
+                if (e2.dead) return;
+                if (dist(e2.x, e2.y, tgCell.px, tgCell.py) < expR) {
+                  e2.hp -= expDmg;
+                  S.floats.push({ x: e2.x, y: e2.y - 12, t: 0, txt: '💥' + Math.round(expDmg), color: '#ef4444' });
+                }
+              });
+              S.fx.push({ type: 'boom', x: tgCell.px, y: tgCell.py, t: 0, r: expR });
+              S.shake = Math.max(S.shake, 6);
             }
             S.fx.push({ type: 'ring', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize/2, color: '#ff6a6a' });
             tgCell.unit = null; recompute();
@@ -931,28 +1098,13 @@ function waveClear() {
   S.gold += bonus;
 
   if (S.wave >= 6) {
-    // 进入下一关
-    if (S.level >= 30) return win();
-    S.level++;
-    const nlv = LEVELS.find(l => l.id === S.level);
-    S.chapter = nlv.chapter;
-    S.wave = 1;
-    // 解锁新单位
-    S.unlockedTypes = Array.from(new Set([...S.unlockedTypes, ...nlv.unlock]));
-    // 恢复心HP
-    S.heartMax = S.chapter === 1 ? 100 : (S.chapter === 2 ? 140 : 180);
-    S.heartHp = S.heartMax;
-    // 清除敌人
-    S.enemies = []; S.shots = []; S.floats = []; S.fx = [];
-    buildLayout();
-    // 骑马单位重新定位到新棋盘的合适格子（保留等级与冷却）
-    relocateRidersForNewLevel();
-    // 进入新关卡时给骑手回满血
-    if (S.riders.length > 0) {
-      S.riders.forEach(r => { r.hp = r.maxHp; r.dead = false; r.respawnT = 0; });
-    }
-    showLevelBanner(nlv);
-    toShop(bonus);
+    // 关卡完成，显示胜利结算
+    S.phase = 'over';
+    $('shop').classList.add('hidden');
+    $('battleBar').classList.add('hidden');
+    const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
+    showVictory(S.wave, 6);
+    return;
   } else {
     S.wave++;
     toShop(bonus);
@@ -1002,20 +1154,35 @@ function overlay(title, desc, btn, fn) {
 function draw() {
   ctx.save();
   if (S.shake > 0) { ctx.translate((Math.random()-.5)*S.shake, (Math.random()-.5)*S.shake); S.shake *= 0.86; }
-  // 背景
-  const g = ctx.createLinearGradient(0,0,0,H);
-  if (S.chapter === 3) { g.addColorStop(0,'#2a2040'); g.addColorStop(1,'#1a1530'); }
-  else if (S.chapter === 2) { g.addColorStop(0,'#ead6b5'); g.addColorStop(1,'#d8bd91'); }
-  else { g.addColorStop(0,'#eee2c7'); g.addColorStop(1,'#d9c29a'); }
-  ctx.fillStyle = g; ctx.fillRect(-20,-20,W+40,H+40);
-
+  
+  // ===== 中国风背景 =====
+  const bgColors = {
+    1: { top: '#f0e6c8', mid: '#e8dcc0', bot: '#d4c296' },
+    2: { top: '#f5e6d3', mid: '#e8d0b0', bot: '#d9b896' },
+    3: { top: '#e8e0f0', mid: '#d8c8e0', bot: '#c8b8d0' },
+    4: { top: '#f8f0e0', mid: '#f0e0c8', bot: '#e0d0b0' },
+  };
+  const bc = bgColors[S.chapter] || bgColors[1];
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, bc.top);
+  bgGrad.addColorStop(0.5, bc.mid);
+  bgGrad.addColorStop(1, bc.bot);
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+  
+  // ===== 中国风云雾效果 =====
+  drawClouds();
+  
+  // ===== 建筑轮廓（顶部和底部） =====
+  drawBuildings();
+  
   // ===== 章节主题色 =====
   const s = S.cellSize;
   const themes = {
-    1: { cell: 'rgba(255,248,226,0.18)', cellFill: 'rgba(250,240,211,0.96)', border: 'rgba(101,76,40,0.35)', borderUnit: 'rgba(101,76,40,0.55)', obs: '#8a7a5a', obsDark: '#6a5a3a' },
-    2: { cell: 'rgba(255,220,180,0.18)', cellFill: 'rgba(255,235,200,0.96)', border: 'rgba(140,60,30,0.4)', borderUnit: 'rgba(140,60,30,0.6)', obs: '#a04020', obsDark: '#702810' },
-    3: { cell: 'rgba(220,200,255,0.18)', cellFill: 'rgba(240,230,255,0.96)', border: 'rgba(80,60,120,0.4)', borderUnit: 'rgba(80,60,120,0.6)', obs: '#5a4078', obsDark: '#3a2858' },
-    4: { cell: 'rgba(255,240,200,0.18)', cellFill: 'rgba(255,248,220,0.96)', border: 'rgba(160,120,30,0.4)', borderUnit: 'rgba(160,120,30,0.6)', obs: '#b09020', obsDark: '#806810' },
+    1: { cell: 'rgba(255,248,226,0.25)', cellFill: 'rgba(250,240,211,0.98)', border: 'rgba(101,76,40,0.4)', borderUnit: 'rgba(101,76,40,0.6)', gold: '#c49a48', goldLight: '#e8c860' },
+    2: { cell: 'rgba(255,220,180,0.25)', cellFill: 'rgba(255,235,200,0.98)', border: 'rgba(140,60,30,0.45)', borderUnit: 'rgba(140,60,30,0.65)', gold: '#d97827', goldLight: '#f4a460' },
+    3: { cell: 'rgba(220,200,255,0.25)', cellFill: 'rgba(240,230,255,0.98)', border: 'rgba(80,60,120,0.45)', borderUnit: 'rgba(80,60,120,0.65)', gold: '#9333ea', goldLight: '#c084fc' },
+    4: { cell: 'rgba(255,240,200,0.25)', cellFill: 'rgba(255,248,220,0.98)', border: 'rgba(160,120,30,0.45)', borderUnit: 'rgba(160,120,30,0.65)', gold: '#daa520', goldLight: '#ffd700' },
   };
   const th = themes[S.chapter] || themes[1];
 
@@ -1058,19 +1225,53 @@ function draw() {
   if (S.riders && S.riders.length > 0) {
     S.riders.forEach(rider => {
       if (rider.dead || !rider.history || rider.history.length < 2) return;
+      
       for (let i = 0; i < rider.history.length - 1; i++) {
         const h = rider.history[i];
         const cell = S.cells.find(c => c.gc === h.x && c.gr === h.y);
         if (!cell) continue;
+        
         const age = i / rider.history.length;
-        const alpha = (1 - age) * 0.25;
+        const alpha = (1 - age) * 0.3;
+        const scale = 0.35 + age * 0.15;
+        
         ctx.save();
         ctx.translate(cell.px, cell.py);
-        ctx.fillStyle = `rgba(255,200,80,${alpha})`;
+        
+        // 内圈金色光晕
+        ctx.fillStyle = `rgba(255,215,100,${alpha * 0.6})`;
         ctx.beginPath();
-        ctx.arc(0, 0, s * 0.38, 0, Math.PI * 2);
+        ctx.arc(0, 0, s * scale, 0, Math.PI * 2);
         ctx.fill();
+        
+        // 外圈光晕
+        ctx.fillStyle = `rgba(255,180,60,${alpha * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, s * (scale + 0.1), 0, Math.PI * 2);
+        ctx.fill();
+        
         ctx.restore();
+      }
+      
+      // 轨迹连线（金色流星线）
+      if (rider.history.length >= 3) {
+        ctx.strokeStyle = 'rgba(255,215,100,0.4)';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = '#ffd76a';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        for (let i = 0; i < rider.history.length; i++) {
+          const h = rider.history[i];
+          const cell = S.cells.find(c => c.gc === h.x && c.gr === h.y);
+          if (!cell) continue;
+          const age = i / rider.history.length;
+          if (i === 0) ctx.moveTo(cell.px, cell.py);
+          else ctx.lineTo(cell.px, cell.py);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
       }
     });
   }
@@ -1111,13 +1312,43 @@ function draw() {
     const u = c.unit;
     ctx.save();
     ctx.translate(c.px, c.py);
-    roundRect(-s/2, -s/2, s, s, 10);
-    ctx.fillStyle = u ? th.cellFill : th.cell;
+    
+    const cw = s * 1.15;  // 格子宽度（稍宽，卡牌风格）
+    const ch = s * 0.9;   // 格子高度（稍矮，卡牌风格）
+    const cr = 6;         // 圆角
+    
+    // 格子阴影
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    roundRect(-cw/2 + 3, -ch/2 + 3, cw, ch, cr);
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = u ? (u.combo ? COMBO_INFO[UNITS[u.ch].combo].color : th.borderUnit) : th.border;
-    if (u && u.combo) { ctx.lineWidth=4; ctx.shadowColor=ctx.strokeStyle; ctx.shadowBlur=14; }
-    ctx.stroke(); ctx.shadowBlur=0;
+    
+    // 格子背景
+    roundRect(-cw/2, -ch/2, cw, ch, cr);
+    ctx.fillStyle = u ? '#fff8e8' : 'rgba(255,248,230,0.3)';
+    ctx.fill();
+    
+    // 木纹边框
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = u ? '#c49a48' : 'rgba(196,154,72,0.5)';
+    ctx.stroke();
+    
+    // 内边框（装饰线）
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = u ? 'rgba(196,154,72,0.4)' : 'rgba(196,154,72,0.2)';
+    roundRect(-cw/2 + 4, -ch/2 + 4, cw - 8, ch - 8, cr - 2);
+    ctx.stroke();
+    
+    // 单位combo发光效果
+    if (u && u.combo) {
+      const comboColor = COMBO_INFO[UNITS[u.ch].combo].color;
+      ctx.shadowColor = comboColor;
+      ctx.shadowBlur = 15 + Math.sin(S.time * 3) * 5;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = comboColor;
+      roundRect(-cw/2, -ch/2, cw, ch, cr);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
 
     // ===== 特殊格子标记 =====
     if (c.special && !u) {
@@ -1201,40 +1432,128 @@ function draw() {
       if (u.shield && u.shield > 0) {
         ctx.strokeStyle='#88ddff'; ctx.lineWidth=2;
         ctx.globalAlpha=0.6+Math.sin(S.time*4)*0.3;
-        ctx.beginPath();ctx.arc(0,0,s*0.48,0,Math.PI*2);ctx.stroke();
+        roundRect(-cw/2+2, -ch/2+2, cw-4, ch-4, cr-1);
+        ctx.stroke();
         ctx.globalAlpha=1;
       }
-      ctx.fillStyle = UNITS[u.ch].color;
-      ctx.font = `900 ${s*0.5}px "PingFang SC",sans-serif`;
+      
+      // 等级角标（左上角）
+      const lv = u.lv || 1;
+      const lvSize = s * 0.28;
+      ctx.fillStyle = u.combo ? COMBO_INFO[UNITS[u.ch].combo].color : '#e74c3c';
+      ctx.beginPath();
+      ctx.moveTo(-cw/2, -ch/2);
+      ctx.lineTo(-cw/2 + lvSize * 1.6, -ch/2);
+      ctx.lineTo(-cw/2, -ch/2 + lvSize * 1.6);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      ctx.fillStyle = '#fff';
+      ctx.font = `900 ${s*0.2}px "PingFang SC",sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(lv, -cw/2 + 4, -ch/2 + 2);
+      
+      // 单位大字名字（居中）
+      const d = UNITS[u.ch];
+      const displayName = d.name || u.ch;
+      ctx.fillStyle = d.color || '#2a2118';
+      ctx.font = `900 ${s*0.5}px "PingFang SC","STKaiti","KaiTi",serif`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(u.ch, 0, -s*0.04);
-      ctx.fillStyle='#8a6a30'; ctx.font=`700 ${s*0.17}px sans-serif`;
-      ctx.fillText('Lv'+u.lv, 0, s*0.28);
-      const hpw=s*0.72, ratio=Math.max(0,u.hp/unitMaxHp(u));
-      ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(-hpw/2,s/2-8,hpw,4);
-      ctx.fillStyle=ratio>0.4?'#4fc07a':'#e05a5a'; ctx.fillRect(-hpw/2,s/2-8,hpw*ratio,4);
-      if (u.aura>1) { ctx.fillStyle='#4fc07a'; ctx.font=`700 ${s*0.15}px sans-serif`; ctx.fillText('▲速',0,-s*0.34); }
-      if (u.rallyBuff>0) {
-        ctx.strokeStyle='#ffdd44'; ctx.lineWidth=2;
-        ctx.globalAlpha=0.5+Math.sin(S.time*6)*0.25;
-        ctx.beginPath(); ctx.arc(0,0,s*0.42,0,Math.PI*2); ctx.stroke();
-        ctx.globalAlpha=1;
-        ctx.fillStyle='#ffdd44'; ctx.font=`700 ${s*0.13}px sans-serif`;
-        ctx.fillText('号', s*0.32, -s*0.32);
+      ctx.fillText(displayName, 0, -s*0.02);
+      
+      // 名字描边
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 2;
+      ctx.strokeText(displayName, 0, -s*0.02);
+      
+      // 血条
+      const hpw = cw * 0.7;
+      const ratio = Math.max(0, u.hp / unitMaxHp(u));
+      const hpY = ch / 2 - 10;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(-hpw/2, hpY, hpw, 6);
+      ctx.fillStyle = ratio > 0.4 ? '#4fc07a' : (ratio > 0.2 ? '#f4c95d' : '#e05a5a');
+      ctx.fillRect(-hpw/2, hpY, hpw * ratio, 6);
+      // 血条边框
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-hpw/2, hpY, hpw, 6);
+
+      // 镜魂充能进度条（仅可生成镜像的兵种显示）
+      if (canMirrorUnit(u) && u.charge > 0) {
+        const chRatio = u.charge / (u.maxCharge || MIRROR_CHARGE_MAX);
+        const chY = hpY + 8;
+        const chw = cw * 0.6;
+        // 背景
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(-chw/2, chY, chw, 3);
+        // 充能颜色：绿→黄→红
+        let chColor;
+        if (chRatio < 0.4) chColor = '#4ade80';
+        else if (chRatio < 0.7) chColor = '#f4c95d';
+        else chColor = '#ff6a4a';
+        // 充能接近满时闪烁
+        if (chRatio > 0.85) {
+          ctx.shadowColor = chColor;
+          ctx.shadowBlur = 6 + Math.sin(S.time * 8) * 3;
+        }
+        ctx.fillStyle = chColor;
+        ctx.fillRect(-chw/2, chY, chw * chRatio, 3);
+        ctx.shadowBlur = 0;
+        // 镜魂标识
+        if (chRatio > 0.85) {
+          ctx.font = `${s*0.15}px serif`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = 'rgba(255, 200, 100, ' + (0.6 + Math.sin(S.time*6)*0.3) + ')';
+          ctx.fillText('✨', 0, chY - 6);
+        }
+      }
+      // 可充能兵种标识（右上角小图标，提示玩家此单位可生成镜像）
+      if (canMirrorUnit(u)) {
+        ctx.font = `${s*0.16}px serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(136, 221, 255, 0.7)';
+        ctx.fillText('✨', cw/2 - 4, -ch/2 + 2);
+      }
+      
+      if (u.aura > 1) { 
+        ctx.fillStyle = '#4fc07a'; 
+        ctx.font = `700 ${s*0.15}px sans-serif`; 
+        ctx.textAlign = 'right';
+        ctx.fillText('▲速', cw/2 - 4, -ch/2 + 4); 
+      }
+      if (u.rallyBuff > 0) {
+        ctx.strokeStyle = '#ffdd44'; ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.5 + Math.sin(S.time*6)*0.25;
+        roundRect(-cw/2+1, -ch/2+1, cw-2, ch-2, cr-1);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffdd44'; 
+        ctx.font = `700 ${s*0.13}px sans-serif`; 
+        ctx.textAlign = 'right';
+        ctx.fillText('号', cw/2 - 4, -ch/2 + 18);
       }
       // 合成单位大招冷却指示
       if (u.combo && u.comboSkillCd > 0) {
         const cdRatio = Math.min(1, u.comboSkillCd / 8);
-        ctx.strokeStyle='rgba(255,255,255,0.5)';
-        ctx.lineWidth=2;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(0, 0, s*0.45, -Math.PI/2, -Math.PI/2 + (1-cdRatio)*Math.PI*2);
+        ctx.arc(0, 0, s*0.4, -Math.PI/2, -Math.PI/2 + (1-cdRatio)*Math.PI*2);
         ctx.stroke();
       }
     }
     if (S.selCell === S.cells.indexOf(c)) {
-      ctx.strokeStyle='#7dd0ff'; ctx.lineWidth=3;
-      roundRect(-s/2-3,-s/2-3,s+6,s+6,12); ctx.stroke();
+      ctx.strokeStyle = '#7dd0ff'; 
+      ctx.lineWidth = 3;
+      roundRect(-cw/2 - 3, -ch/2 - 3, cw + 6, ch + 6, cr + 2);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1270,8 +1589,11 @@ function draw() {
   for (const e of S.enemies) {
     const d=ENEMY_DEFS[e.ch]||{color:'#999',r:15};
     ctx.save(); ctx.translate(e.x,e.y);
-    ctx.fillStyle='rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(0,e.r*0.85,e.r*0.8,e.r*0.3,0,0,Math.PI*2); ctx.fill();
+    
+    // 阴影
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(0, e.r * 0.85, e.r * 0.7, e.r * 0.28, 0, 0, Math.PI*2); ctx.fill();
+    
     // 定身/冰冻效果
     if(e.root>0){
       ctx.fillStyle='rgba(100,200,255,0.4)';
@@ -1287,7 +1609,6 @@ function draw() {
     if(e.stun>0){
       ctx.fillStyle='rgba(255,200,0,0.3)';
       ctx.beginPath();ctx.arc(0,0,e.r*1.15,0,Math.PI*2);ctx.fill();
-      // 星星
       for(let i=0;i<3;i++){
         const a=S.time*2+(i/3)*Math.PI*2;
         ctx.fillStyle='#ffd700';
@@ -1308,18 +1629,63 @@ function draw() {
       ctx.beginPath();ctx.arc(0,0,e.r*1.05,0,Math.PI*2);ctx.stroke();
       ctx.setLineDash([]);
     }
-    ctx.fillStyle=d.color;
-    if(e.boss||e.elite){ctx.shadowColor=d.color;ctx.shadowBlur=16;}
-    ctx.beginPath();ctx.arc(0,0,e.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-    ctx.fillStyle=e.ch==='白骨精'?'#333':'#fff';
-    const fs=e.ch.length>1?e.r*0.72:e.r*1.15;
-    ctx.font=`900 ${fs}px "PingFang SC",sans-serif`;
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    if(e.ch.length>2){ctx.fillText(e.ch.slice(0,2),0,-fs*0.4);ctx.fillText(e.ch.slice(2),0,fs*0.5);}
-    else ctx.fillText(e.ch,0,1);
-    const bw2=e.r*2.2,rr2=Math.max(0,e.hp/e.maxHp);
-    ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(-bw2/2,-e.r-9,bw2,4);
-    ctx.fillStyle=e.boss?'#ffb84f':'#ff6a6a';ctx.fillRect(-bw2/2,-e.r-9,bw2*rr2,4);
+    
+    // BOSS/精英光环
+    if(e.boss||e.elite){
+      ctx.shadowColor = d.color;
+      ctx.shadowBlur = 12 + Math.sin(S.time * 3) * 4;
+    }
+    
+    // 敌人名字（书法字体风格）
+    ctx.font = `900 ${e.r * 1.1}px "STKaiti","KaiTi","楷体","PingFang SC",serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // 名字阴影/描边
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    
+    const displayName = e.ch;
+    if (displayName.length > 2) {
+      const fs = e.r * 0.75;
+      ctx.font = `900 ${fs}px "STKaiti","KaiTi","楷体","PingFang SC",serif`;
+      ctx.strokeText(displayName.slice(0, 2), 0, -fs * 0.45);
+      ctx.strokeText(displayName.slice(2), 0, fs * 0.5);
+      ctx.fillStyle = d.color;
+      ctx.fillText(displayName.slice(0, 2), 0, -fs * 0.45);
+      ctx.fillText(displayName.slice(2), 0, fs * 0.5);
+    } else {
+      ctx.strokeText(displayName, 0, 2);
+      ctx.fillStyle = d.color;
+      ctx.fillText(displayName, 0, 2);
+    }
+    
+    ctx.shadowBlur = 0;
+    
+    // 小装饰图标（精英/BOSS）
+    if (e.boss) {
+      ctx.font = `${e.r * 0.8}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('👑', 0, -e.r - 6);
+    } else if (e.elite) {
+      ctx.font = `${e.r * 0.7}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('⚔️', 0, -e.r - 4);
+    }
+    
+    // 血条
+    const bw2 = e.r * 2.4;
+    const rr2 = Math.max(0, e.hp / e.maxHp);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(-bw2/2, -e.r - 12, bw2, 5);
+    ctx.fillStyle = e.boss ? '#ffb84f' : (e.elite ? '#ff9a4a' : '#ff6a6a');
+    ctx.fillRect(-bw2/2, -e.r - 12, bw2 * rr2, 5);
+    // 血条边框
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-bw2/2, -e.r - 12, bw2, 5);
+    
     ctx.restore();
   }
 
@@ -1563,6 +1929,241 @@ function roundRect(x,y,w,h,r){
   ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
 }
 
+/* ============ 中国风云雾渲染 ============ */
+function drawClouds() {
+  const cloudAlpha = 0.25 + Math.sin(S.time * 0.3) * 0.08;
+  const cloudSpeed = 0.3;
+  
+  const clouds = [
+    { x: (S.time * cloudSpeed * 20 + W * 0.1) % (W * 1.2), y: H * 0.08, s: 0.8 },
+    { x: (S.time * cloudSpeed * 15 + W * 0.5) % (W * 1.2), y: H * 0.12, s: 1.2 },
+    { x: (S.time * cloudSpeed * 25 + W * 0.8) % (W * 1.2), y: H * 0.05, s: 0.6 },
+    { x: (S.time * cloudSpeed * 18 + W * 0.3) % (W * 1.2), y: H * 0.92, s: 0.9 },
+    { x: (S.time * cloudSpeed * 22 + W * 0.7) % (W * 1.2), y: H * 0.88, s: 1.0 },
+  ];
+  
+  ctx.fillStyle = `rgba(255,255,255,${cloudAlpha})`;
+  clouds.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 40 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 30 * c.s, c.y - 10 * c.s, 35 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 50 * c.s, c.y, 30 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 20 * c.s, c.y + 10 * c.s, 25 * c.s, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/* ============ 中国风建筑渲染 ============ */
+function drawBuildings() {
+  const topH = H * 0.18;
+  const botH = H * 0.16;
+  
+  ctx.save();
+  
+  // ===== 顶部城墙 =====
+  const wallColor = '#c9a878';
+  const wallDark = '#a08050';
+  const wallLight = '#d8b888';
+  
+  // 城墙主体
+  ctx.fillStyle = wallColor;
+  ctx.fillRect(0, topH - 40, W, 40);
+  
+  // 城墙底座阴影
+  ctx.fillStyle = wallDark;
+  ctx.fillRect(0, topH - 8, W, 8);
+  
+  // 城垛（锯齿状）
+  ctx.fillStyle = wallColor;
+  const merlons = Math.floor(W / 40);
+  for (let i = 0; i < merlons; i++) {
+    ctx.fillRect(i * 40 + 5, topH - 55, 20, 15);
+  }
+  
+  // 城墙纹理（横线）
+  ctx.strokeStyle = wallDark;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.4;
+  for (let y = topH - 35; y < topH - 5; y += 10) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  
+  // ===== 左侧城楼 =====
+  const towerW = 70;
+  const towerX = 20;
+  const towerTop = topH - 90;
+  
+  // 城楼主体
+  ctx.fillStyle = wallLight;
+  ctx.fillRect(towerX, towerTop, towerW, 50);
+  ctx.strokeStyle = wallDark;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(towerX, towerTop, towerW, 50);
+  
+  // 城楼屋顶（飞檐）
+  ctx.fillStyle = '#7a4a2a';
+  ctx.beginPath();
+  ctx.moveTo(towerX - 10, towerTop);
+  ctx.lineTo(towerX + towerW / 2, towerTop - 25);
+  ctx.lineTo(towerX + towerW + 10, towerTop);
+  ctx.closePath();
+  ctx.fill();
+  
+  // 屋顶瓦片
+  ctx.strokeStyle = '#5a3a1a';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 5; i++) {
+    const tx = towerX + 5 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(tx, towerTop - 2);
+    ctx.lineTo(tx + 5, towerTop - 15);
+    ctx.stroke();
+  }
+  
+  // 城楼门
+  ctx.fillStyle = '#5a3a1a';
+  ctx.fillRect(towerX + 25, towerTop + 20, 20, 30);
+  ctx.beginPath();
+  ctx.arc(towerX + 35, towerTop + 20, 10, Math.PI, 0);
+  ctx.fill();
+  
+  // ===== 右侧城楼 =====
+  const towerX2 = W - 20 - towerW;
+  ctx.fillStyle = wallLight;
+  ctx.fillRect(towerX2, towerTop, towerW, 50);
+  ctx.strokeStyle = wallDark;
+  ctx.strokeRect(towerX2, towerTop, towerW, 50);
+  
+  ctx.fillStyle = '#7a4a2a';
+  ctx.beginPath();
+  ctx.moveTo(towerX2 - 10, towerTop);
+  ctx.lineTo(towerX2 + towerW / 2, towerTop - 25);
+  ctx.lineTo(towerX2 + towerW + 10, towerTop);
+  ctx.closePath();
+  ctx.fill();
+  
+  for (let i = 0; i < 5; i++) {
+    const tx = towerX2 + 5 + i * 14;
+    ctx.beginPath();
+    ctx.moveTo(tx, towerTop - 2);
+    ctx.lineTo(tx + 5, towerTop - 15);
+    ctx.stroke();
+  }
+  
+  ctx.fillStyle = '#5a3a1a';
+  ctx.fillRect(towerX2 + 25, towerTop + 20, 20, 30);
+  ctx.beginPath();
+  ctx.arc(towerX2 + 35, towerTop + 20, 10, Math.PI, 0);
+  ctx.fill();
+  
+  // ===== 旗帜 =====
+  const flagColors = ['#c9483c', '#c9483c', '#c9483c', '#c9483c', '#c9483c'];
+  const flagPositions = [
+    { x: towerX + towerW / 2, y: towerTop - 35 },
+    { x: W * 0.25, y: topH - 60 },
+    { x: W * 0.5, y: topH - 65 },
+    { x: W * 0.75, y: topH - 60 },
+    { x: towerX2 + towerW / 2, y: towerTop - 35 },
+  ];
+  
+  flagPositions.forEach((pos, idx) => {
+    // 旗杆
+    ctx.strokeStyle = '#5a3a1a';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(pos.x, pos.y - 30);
+    ctx.stroke();
+    
+    // 旗杆顶
+    ctx.fillStyle = '#c9a82e';
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y - 32, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 旗帜（飘动）
+    const flagWave = Math.sin(S.time * 2.5 + idx) * 5;
+    const flagWave2 = Math.sin(S.time * 3 + idx * 0.8) * 3;
+    ctx.fillStyle = flagColors[idx];
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y - 30);
+    ctx.lineTo(pos.x + 25 + flagWave, pos.y - 24 + flagWave2);
+    ctx.lineTo(pos.x + 18 + flagWave, pos.y - 15);
+    ctx.lineTo(pos.x + 28 + flagWave, pos.y - 8 + flagWave2);
+    ctx.lineTo(pos.x, pos.y - 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // 旗帜边缘暗纹
+    ctx.strokeStyle = '#8a2820';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+  
+  // ===== 底部城墙 =====
+  const botWallY = H - botH + 10;
+  
+  ctx.fillStyle = wallColor;
+  ctx.fillRect(0, botWallY, W, botH - 10);
+  
+  ctx.fillStyle = wallDark;
+  ctx.fillRect(0, botWallY, W, 6);
+  
+  // 底部城垛
+  ctx.fillStyle = wallColor;
+  for (let i = 0; i < merlons; i++) {
+    ctx.fillRect(i * 40 + 5, botWallY - 12, 20, 12);
+  }
+  
+  // 底部城门（中央）
+  const gateW = 100;
+  const gateX = W / 2 - gateW / 2;
+  ctx.fillStyle = '#5a3a1a';
+  ctx.fillRect(gateX, botWallY + 10, gateW, botH - 20);
+  ctx.beginPath();
+  ctx.arc(W / 2, botWallY + 10, gateW / 2, Math.PI, 0);
+  ctx.fill();
+  
+  // 城门装饰
+  ctx.strokeStyle = '#c9a82e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(W / 2, botWallY + 10, gateW / 2 - 8, Math.PI, 0);
+  ctx.stroke();
+  
+  // 门钉
+  ctx.fillStyle = '#c9a82e';
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 5; col++) {
+      ctx.beginPath();
+      ctx.arc(gateX + 15 + col * 17, botWallY + 30 + row * 20, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  
+  // 底部左右角楼
+  [20, W - 20 - 50].forEach(tx => {
+    ctx.fillStyle = wallLight;
+    ctx.fillRect(tx, botWallY - 35, 50, 35);
+    ctx.strokeStyle = wallDark;
+    ctx.strokeRect(tx, botWallY - 35, 50, 35);
+    
+    ctx.fillStyle = '#7a4a2a';
+    ctx.beginPath();
+    ctx.moveTo(tx - 8, botWallY - 35);
+    ctx.lineTo(tx + 25, botWallY - 55);
+    ctx.lineTo(tx + 58, botWallY - 35);
+    ctx.closePath();
+    ctx.fill();
+  });
+  
+  ctx.restore();
+}
+
 /* ============ 主循环 ============ */
 let last=0, lastTick=0, rafOk=false;
 function loop(ts){
@@ -1603,6 +2204,8 @@ function reset() {
   buildLayout();
   // 骑马单位默认永久存在，无需合成
   spawnDefaultRider();
+  // 应用天赋血量加成
+  if (typeof applyTalentHeartBonus === 'function') applyTalentHeartBonus();
   toShop();
 }
 
@@ -1641,8 +2244,338 @@ function relocateRidersForNewLevel() {
   });
 }
 
+/* ============================================================
+ *  装备系统 UI
+ * ============================================================ */
+
+/* 渲染武器卡片 */
+function renderEquipGrid() {
+  const grid = $('equipGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  WEAPONS.forEach(w => {
+    const save = SaveMgr.get();
+    const unlocked = isWeaponUnlocked(w, save);
+    const lv = save.weapons[w.id]?.level || (unlocked ? 1 : 0);
+    const isMax = lv >= w.maxLv;
+    const cost = isMax ? 0 : getWeaponUpgradeCost(w, lv);
+
+    const card = document.createElement('div');
+    card.className = 'weapon-card quality-' + w.quality + (unlocked ? '' : ' locked');
+    card.dataset.weaponId = w.id;
+
+    // 显示大字
+    let bigText = w.ch;
+    if (w.type === 'combo') {
+      // 组合武器：显示组合名（如悟空）
+      bigText = w.name;
+    } else if (w.type === 'fun') {
+      bigText = w.unitType || w.name;
+    } else if (w.type === 'beast') {
+      bigText = w.name;
+    }
+
+    // 攻击力显示
+    let atkVal = 0;
+    if (w.type === 'combo' && w.comboKey) {
+      // 组合武器找基础攻击
+      const baseUnit = Object.values(UNITS).find(u => u.combo === w.comboKey);
+      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
+    } else if (w.type === 'fun') {
+      const baseUnit = UNITS[w.unitType];
+      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
+    } else {
+      const baseUnit = UNITS[w.ch];
+      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
+    }
+
+    card.innerHTML = `
+      <div class="wp-level">Lv.${lv}</div>
+      <div class="wp-name">${w.name}</div>
+      <div class="wp-big">${bigText}<span class="wp-icon">${w.icon || ''}</span></div>
+      <div class="wp-atk">攻击 <b>${atkVal}</b></div>
+      <div class="wp-upgrade-btn ${isMax ? 'max' : ''}">
+        ${isMax ? '已满级' : (unlocked ? '💰 ' + formatNumber(cost) : '🔒 未解锁')}
+      </div>
+    `;
+
+    if (unlocked && !isMax) {
+      card.querySelector('.wp-upgrade-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const result = SaveMgr.upgradeWeapon(w.id);
+        if (result.ok) {
+          toast(`升级成功！Lv.${result.newLevel}`);
+          renderEquipGrid();
+          updateAllResourceUI();
+        } else {
+          toast(result.msg);
+        }
+      });
+    } else if (!unlocked && w.unlock?.type === 'diamond') {
+      // 钻石解锁的武器
+      card.classList.remove('locked');
+      const btn = card.querySelector('.wp-upgrade-btn');
+      btn.classList.remove('max');
+      btn.textContent = '💎 ' + w.unlock.cost + ' 解锁';
+      btn.style.background = 'linear-gradient(180deg, #60a5fa, #3b82f6)';
+      btn.style.borderColor = '#2563eb';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (SaveMgr.spendDiamond(w.unlock.cost)) {
+          SaveMgr.unlockWeapon(w.id);
+          toast(`解锁成功：${w.name}！`);
+          renderEquipGrid();
+          updateAllResourceUI();
+        } else {
+          toast('钻石不足！');
+        }
+      });
+    } else if (!unlocked && w.unlock?.type === 'weapon') {
+      // 需要先拥有基础武器 + 钻石解锁的神级武器
+      const hasBase = SaveMgr.get().unlockedWeapons?.includes(w.unlock.weaponId);
+      card.classList.remove('locked');
+      const btn = card.querySelector('.wp-upgrade-btn');
+      btn.classList.remove('max');
+      if (hasBase) {
+        btn.textContent = '💎 ' + w.unlock.costDiamond + ' 觉醒';
+        btn.style.background = 'linear-gradient(180deg, #ff8c42, #f97316)';
+        btn.style.borderColor = '#ea580c';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (SaveMgr.spendDiamond(w.unlock.costDiamond)) {
+            SaveMgr.unlockWeapon(w.id);
+            toast(`觉醒成功：${w.name}！`);
+            renderEquipGrid();
+            updateAllResourceUI();
+          } else {
+            toast('钻石不足！');
+          }
+        });
+      } else {
+        btn.textContent = '需先解锁前置';
+        btn.style.background = 'linear-gradient(180deg, #8b7355, #6b5a40)';
+        btn.style.borderColor = '#5a4a30';
+        btn.style.color = '#d4c4a0';
+      }
+    }
+
+    grid.appendChild(card);
+  });
+}
+
+/* 数字格式化 */
+function formatNumber(n) {
+  if (n >= 100000000) return (n / 100000000).toFixed(2) + '亿';
+  if (n >= 10000) return (n / 10000).toFixed(2) + '万';
+  return n.toString();
+}
+
+/* ============================================================
+ *  天赋系统 UI
+ * ============================================================ */
+
+const TALENT_DEFS = [
+  { key: 'attack',  name: '攻击', icon: '⚔️', maxLv: 20, desc: lv => '+' + (lv * 10) + '%攻击' },
+  { key: 'hp',      name: '血量', icon: '❤️', maxLv: 20, desc: lv => '+' + (lv * 12) + '血量' },
+  { key: 'defense', name: '防御', icon: '🛡️', maxLv: 20, desc: lv => '+' + (lv * 5) + '%减伤' },
+];
+
+function renderTalents() {
+  const container = $('talentContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  TALENT_DEFS.forEach(tal => {
+    const save = SaveMgr.get();
+    const lv = save.talents[tal.key] || 0;
+
+    const col = document.createElement('div');
+    col.className = 'talent-column';
+    col.innerHTML = `<div class="talent-column-title">${tal.icon} ${tal.name}</div>`;
+
+    // 显示5个节点（代表前5级，满级显示更多）
+    const nodeCount = 5;
+    for (let i = nodeCount - 1; i >= 0; i--) {
+      const nodeLv = lv >= i + 1 ? i + 1 : (i < lv ? i + 1 : 0);
+      const isUnlocked = i < lv;
+      const isMax = lv >= tal.maxLv && i === nodeCount - 1;
+
+      // 连线
+      if (i < nodeCount - 1) {
+        const conn = document.createElement('div');
+        conn.className = 'talent-connector' + (isUnlocked ? ' active' : '');
+        col.appendChild(conn);
+      }
+
+      const node = document.createElement('div');
+      node.className = 'talent-node' + (isUnlocked ? ' unlocked' : '') + (isMax ? ' max' : '');
+      node.innerHTML = `
+        <div class="tn-icon">${tal.icon}</div>
+        <div class="tn-value">${tal.desc(i + 1)}</div>
+        ${lv > 0 ? `<div class="tn-lv">Lv.${lv}</div>` : ''}
+      `;
+
+      node.addEventListener('click', () => {
+        const result = SaveMgr.upgradeTalent(tal.key);
+        if (result.ok) {
+          toast(`${tal.name}天赋升级！Lv.${result.newLevel}`);
+          renderTalents();
+          updateAllResourceUI();
+        } else {
+          toast(result.msg);
+        }
+      });
+
+      col.appendChild(node);
+    }
+
+    container.appendChild(col);
+  });
+}
+
+/* ============================================================
+ *  底部Tab切换
+ * ============================================================ */
+let currentTab = 'equip';
+
+function switchTab(tabName) {
+  currentTab = tabName;
+
+  // 更新Tab高亮
+  document.querySelectorAll('.tab-item').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tabName);
+  });
+
+  // 切换View
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  if (tabName === 'equip') {
+    $('equipView').classList.add('active');
+    renderEquipGrid();
+  } else if (tabName === 'battle') {
+    $('battleView').classList.add('active');
+  } else if (tabName === 'talent') {
+    $('talentView').classList.add('active');
+    renderTalents();
+  }
+  updateAllResourceUI();
+}
+
+function setupTabBar() {
+  document.querySelectorAll('.tab-item').forEach(item => {
+    item.addEventListener('click', () => {
+      switchTab(item.dataset.tab);
+    });
+  });
+}
+
+/* ============================================================
+ *  资源UI同步
+ * ============================================================ */
+function updateAllResourceUI() {
+  const save = SaveMgr.get();
+  const goldStr = formatNumber(save.gold);
+  const diaStr = formatNumber(save.diamond);
+
+  // 装备界面
+  const eqGold = $('eqGold'); if (eqGold) eqGold.textContent = goldStr;
+  const eqDia = $('eqDiamond'); if (eqDia) eqDia.textContent = diaStr;
+
+  // 天赋界面
+  const taGold = $('taGold'); if (taGold) taGold.textContent = goldStr;
+  const taDia = $('taDiamond'); if (taDia) taDia.textContent = diaStr;
+
+  // 战斗界面（顶部金币从存档读，战斗内金币另算）
+  const tbG = $('tbGold');
+  if (tbG && S.gold !== undefined) {
+    // 战斗中显示当前关卡金币
+    tbG.textContent = S.gold;
+  }
+}
+
+/* ============================================================
+ *  胜利结算
+ * ============================================================ */
+let victoryReward = { gold: 0, diamond: 0 };
+
+function showVictory(wave, maxWave) {
+  const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
+
+  // 计算奖励
+  const baseGold = 50 + wave * 20 + S.level * 30;
+  const baseDiamond = 5 + Math.floor(S.level * 2) + Math.floor(wave / 3);
+
+  victoryReward = { gold: baseGold, diamond: baseDiamond };
+
+  $('vicWave').textContent = wave;
+  $('vicMaxWave').textContent = maxWave;
+  $('vicGold').textContent = baseGold;
+  $('vicDiamond').textContent = baseDiamond;
+
+  $('victoryOverlay').classList.remove('hidden');
+}
+
+function claimVictory(isDouble) {
+  let g = victoryReward.gold;
+  let d = victoryReward.diamond;
+  if (isDouble) { g *= 2; d *= 2; }
+
+  SaveMgr.addGold(g);
+  SaveMgr.addDiamond(d);
+
+  // 记录最高波次/章节
+  SaveMgr.setHighestWave(Math.max(S.bestWave || 0, S.wave));
+  SaveMgr.setHighestChapter(Math.max(SaveMgr.get().highestChapter || 1, S.level));
+
+  toast(`获得 ${g}💰 ${d}💎`);
+  $('victoryOverlay').classList.add('hidden');
+
+  // 重置关卡
+  reset();
+  // 切回装备界面
+  switchTab('equip');
+}
+
+function setupVictoryButtons() {
+  $('btnVicNormal').addEventListener('click', () => claimVictory(false));
+  $('btnVicDouble').addEventListener('click', () => claimVictory(true));
+}
+
+/* 基地血量加成（天赋） */
+function applyTalentHeartBonus() {
+  const save = SaveMgr.get();
+  const hpLv = save.talents?.hp || 0;
+  const bonus = hpLv * 12;
+  S.heartMax += bonus;
+  S.heartHp += bonus;
+}
+
+/* ============================================================
+ *  初始化
+ * ============================================================ */
+function initGameUI() {
+  setupTabBar();
+  setupVictoryButtons();
+  switchTab('equip'); // 默认进入装备界面
+
+  // +号按钮（测试用，给资源）
+  const gp = $('btnGoldPlus'); if (gp) gp.addEventListener('click', () => {
+    SaveMgr.addGold(10000); updateAllResourceUI(); renderEquipGrid(); toast('+10000 💰');
+  });
+  const dp = $('btnDiaPlus'); if (dp) dp.addEventListener('click', () => {
+    SaveMgr.addDiamond(100); updateAllResourceUI(); renderTalents(); toast('+100 💎');
+  });
+  const tgp = $('btnTaGoldPlus'); if (tgp) tgp.addEventListener('click', () => {
+    SaveMgr.addGold(10000); updateAllResourceUI(); toast('+10000 💰');
+  });
+  const tdp = $('btnTaDiaPlus'); if (tdp) tdp.addEventListener('click', () => {
+    SaveMgr.addDiamond(100); updateAllResourceUI(); renderTalents(); toast('+100 💎');
+  });
+}
+
 ovAction = reset;
 resize();
 setupRiderPanelDrag();
+initGameUI();
 reset();
 startLoop();

@@ -310,8 +310,8 @@ function onArriveCell(rider) {
   // ===== 情境技能触发 =====
   tryRiderSkills(rider, targets, mainTarget, mainKilled);
 
-  // ===== 镜像召唤：骑马路过有单位的格子时，有概率召唤该单位的镜像出战 =====
-  trySummonMirror(rider);
+  // ===== 镜魂充能：骑马路过有单位的格子时，给可生成镜像的兵种充能 =====
+  chargeMirrorUnit(rider);
 
   // ===== 击杀判定：统一标记死亡 + 计入波次进度 =====
   S.enemies.forEach(e => {
@@ -514,11 +514,14 @@ function tryRiderSkills(rider, targets, mainTarget, killed) {
   }
 }
 
-/* ============ 镜像召唤系统 ============
- * 骑马单位路过有友军单位的格子时，有概率召唤该单位的镜像。
- * 镜像会走出格子，自动追击敌人进行攻击，有生存时间限制。
+/* ============ 镜魂充能系统 ============
+ * 骑马单位路过有单位的格子时，给可生成镜像的兵种充能。
+ * 充能进度从绿→黄→红，充满后生成一个镜像出战，充能重置。
+ * 只有合成单位(combo)或特殊兵种(武械栏)才能充能。
  */
-function trySummonMirror(rider) {
+
+/* 骑马踩踏格子时给单位充能 */
+function chargeMirrorUnit(rider) {
   if (rider.dead) return;
   if (!S.riderMirrors) S.riderMirrors = [];
 
@@ -526,20 +529,29 @@ function trySummonMirror(rider) {
   if (!cell || !cell.unit) return;
 
   const u = cell.unit;
-  const d = UNITS[u.ch];
-  if (!d || !d.atk || d.atk <= 0) return;
+  if (!canMirrorUnit(u)) return;
 
-  const maxMirrors = 5;
-  if (S.riderMirrors.length >= maxMirrors) return;
+  // 充能递增：每次踩踏 +15，等级越高充能越快
+  const gain = 15 + (rider.level * 3) + (u.lv * 2);
+  u.charge = Math.min(u.maxCharge || MIRROR_CHARGE_MAX, (u.charge || 0) + gain);
 
-  const summonChance = 0.25 + (rider.level * 0.02);
-  if (Math.random() > summonChance) return;
-
-  const mirror = makeMirror(u, rider.px, rider.py);
-  S.riderMirrors.push(mirror);
-
-  S.fx.push({ type: 'rally', x: rider.px, y: rider.py, t: 0, r: S.cellSize * 0.5, dur: 0.4 });
-  S.floats.push({ x: rider.px, y: rider.py - 28, t: 0, txt: '✨召唤镜像!', color: '#aaddff', big: true });
+  // 充能满 → 生成镜像
+  if (u.charge >= (u.maxCharge || MIRROR_CHARGE_MAX)) {
+    const maxMirrors = 8;
+    if (S.riderMirrors.length < maxMirrors) {
+      const mirror = makeMirror(u, cell.px, cell.py, true);
+      S.riderMirrors.push(mirror);
+      S.fx.push({ type: 'rally', x: cell.px, y: cell.py, t: 0, r: S.cellSize * 0.6, dur: 0.5, color: '#88ddff' });
+      S.floats.push({ x: cell.px, y: cell.py - 28, t: 0, txt: '✨镜魂!', color: '#aaddff', big: true });
+    }
+    u.charge = 0; // 重置充能
+  } else {
+    // 充能进度飘字（偶尔显示）
+    if (Math.random() < 0.3) {
+      const ratio = u.charge / (u.maxCharge || MIRROR_CHARGE_MAX);
+      S.floats.push({ x: cell.px + 20, y: cell.py - 10, t: 0, txt: '+' + gain, color: ratio > 0.6 ? '#ff8844' : (ratio > 0.3 ? '#f4c95d' : '#4ade80'), small: true });
+    }
+  }
 }
 
 /* ============ 特殊格子触发 ============
@@ -571,26 +583,34 @@ function trySpecialCell(rider) {
   }
 }
 
-function makeMirror(unit, x, y) {
+function makeMirror(unit, x, y, fromCombo) {
   const d = UNITS[unit.ch];
   const m = Math.pow(1.5, unit.lv - 1);
+  const comboName = unit.combo ? (d.combo || null) : null;
+  const hpRatio = fromCombo ? 0.5 : 0.6;   // 合成镜像HP 50%，骑马召唤60%
+  const atkRatio = fromCombo ? 0.6 : 0.7;  // 合成镜像ATK 60%，骑马召唤70%
   return {
     type: 'mirror',
     ch: unit.ch,
     lv: unit.lv,
+    combo: unit.combo,
+    comboName: comboName,
+    fromCombo: !!fromCombo,
     x: x,
     y: y,
-    hp: d.hp * m * 0.6,
-    maxHp: d.hp * m * 0.6,
-    atk: d.atk * m * 0.7,
+    hp: d.hp * m * hpRatio,
+    maxHp: d.hp * m * hpRatio,
+    atk: d.atk * m * atkRatio,
     range: d.range,
     aspd: d.aspd * 1.2,
     cd: 0,
-    lifetime: 8,
-    maxLifetime: 8,
+    lifetime: fromCombo ? 12 : 8,
+    maxLifetime: fromCombo ? 12 : 8,
     target: null,
     dead: false,
     color: d.color || '#88ddff',
+    skillCd: 0,
+    r: 14,
   };
 }
 
@@ -610,14 +630,15 @@ function updateMirrors(dt) {
     }
 
     if (m.cd > 0) m.cd -= dt;
+    if (m.skillCd > 0) m.skillCd -= dt;
 
     const enemies = S.enemies.filter(e => !e.dead && e.hp > 0);
     if (enemies.length === 0) return;
 
     let best = null, bestDist = Infinity;
     enemies.forEach(e => {
-      const dist = Math.hypot(e.x - m.x, e.y - m.y);
-      if (dist < bestDist) { bestDist = dist; best = e; }
+      const d = Math.hypot(e.x - m.x, e.y - m.y);
+      if (d < bestDist) { bestDist = d; best = e; }
     });
     if (!best) return;
 
@@ -626,28 +647,141 @@ function updateMirrors(dt) {
     if (bestDist > rangePx) {
       const spd = (80 + m.lv * 10) * dt;
       const dx = best.x - m.x, dy = best.y - m.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0) {
-        m.x += (dx / dist) * spd;
-        m.y += (dy / dist) * spd;
+      const d = Math.hypot(dx, dy);
+      if (d > 0) {
+        m.x += (dx / d) * spd;
+        m.y += (dy / d) * spd;
       }
     } else if (m.cd <= 0) {
       m.cd = 1 / m.aspd;
-      best.hp -= m.atk;
-      S.floats.push({ x: best.x, y: best.y - 10, t: 0, txt: Math.round(m.atk), color: m.color });
-      S.fx.push({ type: 'slash', x: best.x, y: best.y, t: 0 });
-      if (best.hp <= 0 && !best.dead) {
-        best.dead = true;
-        S.waveKilled++;
-        const g = (ENEMY_DEFS[best.ch] && ENEMY_DEFS[best.ch].gold) || 1;
-        S.gold += g;
-        S.floats.push({ x: best.x, y: best.y - 22, t: 0, txt: '+' + g + '💰', color: '#f4c95d' });
-        S.fx.push({ type: 'ring', x: best.x, y: best.y, t: 0, r: best.r || 15, color: (ENEMY_DEFS[best.ch] && ENEMY_DEFS[best.ch].color) || '#fff' });
-      }
+      // ===== 镜像享有技能 =====
+      mirrorAttack(m, best, enemies);
     }
   });
 
   S.riderMirrors = S.riderMirrors.filter(m => !m.dead);
+}
+
+/* 镜像攻击逻辑：享有原单位技能 */
+function mirrorAttack(m, target, enemies) {
+  const comboName = m.comboName;
+  let dmg = m.atk;
+  let hitFx = 'slash';
+  let hitColor = m.color;
+  let killed = false;
+
+  // ===== 悟空combo：25%概率范围横扫+击飞 =====
+  if (comboName === '悟空' && Math.random() < 0.25) {
+    const smashDmg = m.atk * 1.8;
+    const smashR = S.cellSize * 1.2;
+    enemies.forEach(e => {
+      if (e.dead) return;
+      const d = Math.hypot(e.x - target.x, e.y - target.y);
+      if (d < smashR) {
+        e.hp -= smashDmg * (1 - d / smashR * 0.4);
+        e.knockback = 0.4;
+        e.knockbackX = (e.x - target.x) * 0.5;
+        e.knockbackY = (e.y - target.y) * 0.5;
+        S.floats.push({ x: e.x, y: e.y - 14, t: 0, txt: '🍭' + Math.round(smashDmg), color: '#ff8c00' });
+      }
+    });
+    S.fx.push({ type: 'combo_monkey', x: target.x, y: target.y, t: 0, r: smashR, dur: 0.5 });
+    S.floats.push({ x: m.x, y: m.y - 24, t: 0, txt: '🐵横扫!', color: '#ff8c00', big: true });
+    if (target.hp <= 0 && !target.dead) { target.dead = true; killed = true; }
+    return;
+  }
+
+  // ===== 八戒combo：扇形横扫+吸血 =====
+  if (comboName === '八戒') {
+    const fanDmg = m.atk * 1.3;
+    const fanR = S.cellSize * 1.3;
+    const ang = Math.atan2(target.y - m.y, target.x - m.x);
+    let totalDmg = 0, hit = 0;
+    enemies.forEach(e => {
+      if (e.dead) return;
+      const d = Math.hypot(e.x - m.x, e.y - m.y);
+      if (d < fanR) {
+        const ea = Math.atan2(e.y - m.y, e.x - m.x);
+        let diff = Math.abs(ea - ang);
+        if (diff > Math.PI) diff = Math.PI * 2 - diff;
+        if (diff < Math.PI * 0.35) {
+          e.hp -= fanDmg; hit++; totalDmg += fanDmg;
+          S.floats.push({ x: e.x, y: e.y - 12, t: 0, txt: '🥬' + Math.round(fanDmg), color: '#4682b4' });
+          if (e.hp <= 0 && !e.dead) { e.dead = true; killed = true; }
+        }
+      }
+    });
+    if (hit > 0) {
+      m.hp = Math.min(m.maxHp, m.hp + totalDmg * 0.25);
+      S.fx.push({ type: 'combo_pig', x: m.x, y: m.y, t: 0, ang: ang, r: fanR, dur: 0.4 });
+    }
+    return;
+  }
+
+  // ===== 子牙combo：打神鞭定身 =====
+  if (comboName === '子牙' && m.skillCd <= 0) {
+    m.skillCd = 8.0;
+    const whipDmg = m.atk * 2.5;
+    enemies.forEach(e => {
+      if (e.dead) return;
+      if (Math.hypot(e.x - m.x, e.y - m.y) < S.cellSize * 3) {
+        e.hp -= whipDmg;
+        e.root = Math.max(e.root || 0, 1.5);
+        S.floats.push({ x: e.x, y: e.y - 16, t: 0, txt: '⚡' + Math.round(whipDmg), color: '#daa520' });
+        S.fx.push({ type: 'combo_whip', x: e.x, y: e.y, t: 0, dur: 0.5 });
+        if (e.hp <= 0 && !e.dead) { e.dead = true; killed = true; }
+      }
+    });
+    S.floats.push({ x: m.x, y: m.y - 24, t: 0, txt: '📜打神鞭!', color: '#daa520', big: true });
+    return;
+  }
+
+  // ===== 神·战神：克制妖属性，1.8倍伤害 =====
+  if (UNITS[m.ch] && UNITS[m.ch].counter === '妖') {
+    if (target.ch === '妖') {
+      dmg = m.atk * 1.8;
+      hitColor = '#fbbf24';
+      S.floats.push({ x: target.x, y: target.y - 16, t: 0, txt: '⚔️克制!', color: '#fbbf24', big: true });
+    }
+  }
+
+  // ===== 退·力士：击退敌人 =====
+  if (UNITS[m.ch] && UNITS[m.ch].knockback) {
+    target.knockback = 0.5;
+    target.knockbackX = (target.x - m.x) * 0.6;
+    target.knockbackY = (target.y - m.y) * 0.6;
+    S.fx.push({ type: 'knockback', x: target.x, y: target.y, t: 0, dur: 0.4 });
+    hitColor = '#60a5fa';
+  }
+
+  // ===== 娥·嫦娥：月光弹道 =====
+  if (UNITS[m.ch] && UNITS[m.ch].moonlight) {
+    S.shots.push({ x: m.x, y: m.y, tx: target.x, ty: target.y, tg: target, dmg: dmg, splash: 0, t: 0, color: '#c8b6ff' });
+    return;
+  }
+
+  // 普通攻击
+  target.hp -= dmg;
+  S.floats.push({ x: target.x, y: target.y - 10, t: 0, txt: Math.round(dmg), color: hitColor });
+  S.fx.push({ type: hitFx, x: target.x, y: target.y, t: 0 });
+
+  if (target.hp <= 0 && !target.dead) {
+    target.dead = true;
+    killed = true;
+  }
+
+  // 击杀处理
+  if (killed) {
+    S.waveKilled++;
+    let g = (ENEMY_DEFS[target.ch] && ENEMY_DEFS[target.ch].gold) || 1;
+    // 豪·财神：额外金币
+    if (UNITS[m.ch] && UNITS[m.ch].goldDrop) {
+      g += Math.floor(Math.random() * 3) + 2;
+    }
+    S.gold += g;
+    S.floats.push({ x: target.x, y: target.y - 22, t: 0, txt: '+' + g + '💰', color: '#f4c95d' });
+    S.fx.push({ type: 'ring', x: target.x, y: target.y, t: 0, r: target.r || 15, color: (ENEMY_DEFS[target.ch] && ENEMY_DEFS[target.ch].color) || '#fff' });
+  }
 }
 
 /* 渲染镜像单位 */
@@ -656,25 +790,61 @@ function drawMirrors(ctx) {
   S.riderMirrors.forEach(m => {
     ctx.save();
     ctx.translate(m.x, m.y);
+
+    // 合成镜像有光环
+    if (m.fromCombo) {
+      ctx.fillStyle = 'rgba(136, 221, 255, 0.12)';
+      ctx.beginPath(); ctx.arc(0, 0, S.cellSize * 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+
     ctx.globalAlpha = 0.55 + Math.sin(S.time * 6 + m.x) * 0.15;
     const size = S.cellSize * 0.45;
+
+    // 镜像外框（合成镜像用金色框）
+    if (m.combo) {
+      ctx.strokeStyle = 'rgba(201, 168, 46, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.85, 0, Math.PI * 2); ctx.stroke();
+    }
+
     ctx.fillStyle = m.color;
-    ctx.font = `900 ${size}px "PingFang SC",sans-serif`;
+    ctx.font = `900 ${size}px "STKaiti","KaiTi","楷体","PingFang SC",serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // 描边
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(m.ch, 0, 0);
     ctx.fillText(m.ch, 0, 0);
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     ctx.strokeText(m.ch, 0, 0);
+
+    ctx.globalAlpha = 1;
+
+    // 血条
     const hpRatio = m.hp / m.maxHp;
     const barW = size * 1.2;
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(-barW/2, -size * 0.9, barW, 4);
     ctx.fillStyle = hpRatio > 0.5 ? '#4ade80' : (hpRatio > 0.25 ? '#facc15' : '#ef4444');
     ctx.fillRect(-barW/2, -size * 0.9, barW * hpRatio, 4);
+
+    // 寿命条
     const lifeRatio = m.lifetime / m.maxLifetime;
     ctx.fillStyle = 'rgba(136, 221, 255, 0.6)';
     ctx.fillRect(-barW/2, -size * 0.9 - 5, barW * lifeRatio, 2);
+
+    // 合成镜像显示技能标识
+    if (m.combo && m.comboName) {
+      ctx.font = `${size * 0.35}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(201, 168, 46, 0.8)';
+      const icons = { '悟空':'🐵', '八戒':'🐷', '唐僧':'☀️', '沙僧':'🛡️', '子牙':'📜', '公豹':'👿' };
+      ctx.fillText(icons[m.comboName] || '✨', 0, -size * 0.7);
+    }
+
     ctx.restore();
   });
 }

@@ -33,15 +33,17 @@ jobs:
         run: |
           npm install
 
-      - name: Prepare www directory
+      - name: Build with Vite
+        run: |
+          npm run build
+
+      - name: Prepare www directory (from dist)
         run: |
           mkdir -p www
-          cp index.html www/
-          cp style.css www/
-          cp game.js www/
-          cp levels.js www/
-          cp mobile.js www/
+          cp -R dist/. www/
           ls -la www/
+          echo "--- assets ---"
+          ls -la www/assets/ 2>/dev/null || echo "no assets dir"
 
       - name: Initialize Capacitor iOS platform
         run: |

@@ -21,14 +21,11 @@ const LAYOUTS = {
   /* ---------- 3×3 九宫格（第1-5关） ---------- */
   "grid_3x3": {
     type: "grid", cols: 3, rows: 3,
-    // 格子坐标 → 像素位置由 buildLayout() 计算
-    obstacles: [],   // 无障
-    // 哪些格子可放置单位
+    obstacles: [],
     slots: [
-      [1,0],[2,0],
-      [0,1],      [2,1],
+      [0,0],[1,0],[2,0],
+      [0,1],[1,1],[2,1],
       [0,2],[1,2],[2,2],
-      // 中心(1,1)是"心"，不可放置
     ],
     specials: [
       { type: 'speed', cells: [[2,0]] },
@@ -43,9 +40,8 @@ const LAYOUTS = {
     obstacles: [],
     slots: [
       [0,0],[1,0],[2,0],[3,0],
-      [0,1],            [3,1],
+      [0,1],[1,1],[2,1],[3,1],
       [0,2],[1,2],[2,2],[3,2],
-      // (1,1)(2,1) 留给心 或 通道
     ],
     specials: [
       { type: 'speed', cells: [[0,0]] },
@@ -55,14 +51,14 @@ const LAYOUTS = {
     desc: "矩形·四门"
   },
 
-  /* ---------- 4×4 带障碍（第11-15关·解锁骑马） ---------- */
+  /* ---------- 4×4 全开放（第11-15关·解锁骑马） ---------- */
   "grid_4x4_obs": {
     type: "grid", cols: 4, rows: 4,
-    obstacles: [[1,1],[2,2]],  // 对角线障碍
+    obstacles: [],
     slots: [
       [0,0],[1,0],[2,0],[3,0],
-      [0,1],      [3,1],
-      [0,2],[3,2],
+      [0,1],[1,1],[2,1],[3,1],
+      [0,2],[1,2],[2,2],[3,2],
       [0,3],[1,3],[2,3],[3,3],
     ],
     specials: [
@@ -70,18 +66,17 @@ const LAYOUTS = {
       { type: 'speed', cells: [[3,0]] },
       { type: 'heal',  cells: [[0,3]] },
     ],
-    desc: "四四阵·断龙石"
+    desc: "四四阵·开放"
   },
 
   /* ---------- 十字长廊（第16-20关·骑马天堂） ---------- */
   "cross": {
     type: "cross", cols: 5, rows: 5,
-    obstacles: [[1,0],[3,0],[1,4],[3,4],[0,2],[4,2]],
-    // 十字形可放置格
+    obstacles: [],
     slots: [
       [2,0],
       [1,1],[2,1],[3,1],
-      [0,2],[1,2],      [3,2],[4,2],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
       [1,3],[2,3],[3,3],
       [2,4],
     ],
@@ -95,12 +90,12 @@ const LAYOUTS = {
   /* ---------- 双车道（第21-25关） ---------- */
   "dual_lane": {
     type: "dual_lane", cols: 5, rows: 4,
-    obstacles: [[2,0],[2,1],[2,2],[2,3]],  // 中间隔墙
+    obstacles: [],
     slots: [
-      [0,0],[1,0],      [3,0],[4,0],
-      [0,1],[1,1],      [3,1],[4,1],
-      [0,2],[1,2],      [3,2],[4,2],
-      [0,3],[1,3],      [3,3],[4,3],
+      [0,0],[1,0],[2,0],[3,0],[4,0],
+      [0,1],[1,1],[2,1],[3,1],[4,1],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
+      [0,3],[1,3],[2,3],[3,3],[4,3],
     ],
     specials: [
       { type: 'speed', cells: [[1,0],[3,3]] },
@@ -112,15 +107,13 @@ const LAYOUTS = {
   /* ---------- 螺旋阵（第26-30关·终局） ---------- */
   "spiral": {
     type: "spiral", cols: 5, rows: 5,
-    obstacles: [[2,2]],  // 中心是心
+    obstacles: [],
     slots: [
       [0,0],[1,0],[2,0],[3,0],[4,0],
-      [0,1],                  [4,1],
-      [0,2],                  [4,2],
-      [0,3],                  [4,3],
+      [0,1],[1,1],[2,1],[3,1],[4,1],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
+      [0,3],[1,3],[2,3],[3,3],[4,3],
       [0,4],[1,4],[2,4],[3,4],[4,4],
-      [1,4],[3,4],
-      [1,1],[3,1],
     ],
     specials: [
       { type: 'heal',  cells: [[0,0],[4,4]] },
@@ -133,10 +126,10 @@ const LAYOUTS = {
   /* ---------- 三角阵（支援型布局） ---------- */
   "triangle": {
     type: "triangle", cols: 5, rows: 4,
-    obstacles: [[2,1]],
+    obstacles: [],
     slots: [
               [2,0],
-        [1,1],      [3,1],
+        [1,1],[2,1],[3,1],
       [0,2],[1,2],[2,2],[3,2],[4,2],
       [0,3],[1,3],[2,3],[3,3],[4,3],
     ],
@@ -150,12 +143,12 @@ const LAYOUTS = {
   /* ---------- 阶梯阵（高低错落） ---------- */
   "stair": {
     type: "stair", cols: 5, rows: 5,
-    obstacles: [[0,1],[1,2],[2,3],[3,2],[4,1]],
+    obstacles: [],
     slots: [
       [0,0],[1,0],[2,0],[3,0],[4,0],
-            [1,1],[2,1],[3,1],
-                  [2,2],
-            [1,3],[2,3],[3,3],
+      [0,1],[1,1],[2,1],[3,1],[4,1],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
+      [0,3],[1,3],[2,3],[3,3],[4,3],
       [0,4],[1,4],[2,4],[3,4],[4,4],
     ],
     specials: [
@@ -169,12 +162,12 @@ const LAYOUTS = {
   /* ---------- 回字形（环形防御） ---------- */
   "ring": {
     type: "ring", cols: 5, rows: 5,
-    obstacles: [[1,1],[1,2],[1,3],[2,1],[2,3],[3,1],[3,2],[3,3]],
+    obstacles: [],
     slots: [
       [0,0],[1,0],[2,0],[3,0],[4,0],
-      [0,1],                  [4,1],
-      [0,2],                  [4,2],
-      [0,3],                  [4,3],
+      [0,1],[1,1],[2,1],[3,1],[4,1],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
+      [0,3],[1,3],[2,3],[3,3],[4,3],
       [0,4],[1,4],[2,4],[3,4],[4,4],
     ],
     specials: [
@@ -191,9 +184,9 @@ const LAYOUTS = {
     obstacles: [],
     slots: [
               [2,0],
-        [1,1],      [3,1],
+        [1,1],[2,1],[3,1],
       [0,2],[1,2],[2,2],[3,2],[4,2],
-        [1,3],      [3,3],
+        [1,3],[2,3],[3,3],
               [2,4],
     ],
     specials: [
@@ -207,20 +200,20 @@ const LAYOUTS = {
   /* ---------- 迷宫阵（曲折路径） ---------- */
   "maze": {
     type: "maze", cols: 5, rows: 5,
-    obstacles: [[1,0],[3,0],[0,2],[4,2],[1,4],[3,4]],
+    obstacles: [],
     slots: [
-      [0,0],      [2,0],      [4,0],
+      [0,0],[1,0],[2,0],[3,0],[4,0],
       [0,1],[1,1],[2,1],[3,1],[4,1],
-                  [1,2],[2,2],[3,2],
+      [0,2],[1,2],[2,2],[3,2],[4,2],
       [0,3],[1,3],[2,3],[3,3],[4,3],
-      [0,4],      [2,4],      [4,4],
+      [0,4],[1,4],[2,4],[3,4],[4,4],
     ],
     specials: [
       { type: 'speed', cells: [[2,0],[2,4]] },
       { type: 'rage',  cells: [[0,1],[4,3]] },
       { type: 'heal',  cells: [[2,2]] },
     ],
-    desc: "迷宫阵·曲折"
+    desc: "迷宫阵·开放"
   },
 };
 
@@ -232,23 +225,23 @@ const LAYOUTS = {
  */
 const LEVELS = [
   // ===== 第一章·黄风岭（1-10）·基础+元素兵种+骑马初始 =====
-  { id: 1,  layout: "grid_3x3",    chapter: 1, waveBonus: 4,  unlock: ["雷","冰","火","毒"],         rule: { type: "mirror_unlock", text: "🐴 骑马单位已就位！路过友军可召唤镜像出战！" } },
-  { id: 2,  layout: "grid_3x3",    chapter: 1, waveBonus: 5,  unlock: ["唐","僧"],                     rule: null },
-  { id: 3,  layout: "grid_3x3",    chapter: 1, waveBonus: 5,  unlock: ["唐","僧"],                     rule: { type: "no_archer", text: "本关禁用「箭」" } },
-  { id: 4,  layout: "grid_3x3",    chapter: 1, waveBonus: 6,  unlock: ["悟","空"],                     rule: { type: "fast_enemy", text: "妖魔加速来袭！" } },
-  { id: 5,  layout: "grid_3x3",    chapter: 1, waveBonus: 8,  unlock: ["悟","空"],                     rule: { type: "boss", text: "白骨精登场！" } },
-  { id: 6,  layout: "grid_3x4",    chapter: 1, waveBonus: 6,  unlock: ["八","戒"],                     rule: null },
-  { id: 7,  layout: "grid_3x4",    chapter: 1, waveBonus: 7,  unlock: ["八","戒"],                     rule: { type: "more_spawns", text: "怪物数量+30%" } },
+  { id: 1,  layout: "grid_3x3",    chapter: 1, waveBonus: 4,  unlock: ["疗","退"],                    rule: { type: "mirror_unlock", text: "🐴 骑马单位已就位！路过友军可召唤镜像出战！" } },
+  { id: 2,  layout: "grid_3x3",    chapter: 1, waveBonus: 5,  unlock: ["雷","冰"],                    rule: null },
+  { id: 3,  layout: "grid_3x3",    chapter: 1, waveBonus: 5,  unlock: ["唐","僧"],                    rule: { type: "no_archer", text: "本关禁用「箭」" } },
+  { id: 4,  layout: "grid_3x3",    chapter: 1, waveBonus: 6,  unlock: ["火","毒"],                    rule: { type: "fast_enemy", text: "妖魔加速来袭！" } },
+  { id: 5,  layout: "grid_3x3",    chapter: 1, waveBonus: 8,  unlock: ["悟","空"],                    rule: { type: "boss", text: "白骨精登场！" } },
+  { id: 6,  layout: "grid_3x4",    chapter: 1, waveBonus: 6,  unlock: ["八","戒"],                    rule: null },
+  { id: 7,  layout: "grid_3x4",    chapter: 1, waveBonus: 7,  unlock: ["爆"],                          rule: { type: "more_spawns", text: "怪物数量+30%" } },
   { id: 8,  layout: "grid_3x4",    chapter: 1, waveBonus: 7,  unlock: ["沙"],                          rule: { type: "no_shield", text: "本关禁用「盾」" } },
-  { id: 9,  layout: "grid_3x4",    chapter: 1, waveBonus: 8,  unlock: ["沙","奶"],                      rule: { type: "fast_enemy", text: "妖魔加速来袭！" } },
-  { id: 10, layout: "grid_3x4",    chapter: 1, waveBonus: 10, unlock: ["沙","奶"],                      rule: { type: "boss", text: "白骨精·双生降临！" } },
+  { id: 9,  layout: "grid_3x4",    chapter: 1, waveBonus: 8,  unlock: ["娥"],                          rule: { type: "fast_enemy", text: "妖魔加速来袭！" } },
+  { id: 10, layout: "grid_3x4",    chapter: 1, waveBonus: 10, unlock: ["奶"],                          rule: { type: "boss", text: "白骨精·双生降临！" } },
 
   // ===== 第二章·火焰山（11-20）·进阶兵种+骑术进阶 =====
-  { id: 11, layout: "grid_4x4_obs", chapter: 2, waveBonus: 8,  unlock: ["枪","弓"],                     rule: null },
-  { id: 12, layout: "grid_4x4_obs", chapter: 2, waveBonus: 9,  unlock: ["枪","弓"],                     rule: { type: "rider_mirror_boost", text: "镜像召唤概率提升！" } },
-  { id: 13, layout: "cross",        chapter: 2, waveBonus: 9,  unlock: ["炮","刺"],                     rule: { type: "rider_only", text: "本关考验骑马单位走格！" } },
-  { id: 14, layout: "cross",        chapter: 2, waveBonus: 10, unlock: ["炮","刺"],                     rule: null },
-  { id: 15, layout: "cross",        chapter: 2, waveBonus: 12, unlock: ["甲","锤"],                     rule: { type: "boss", text: "牛魔王先锋到来！" } },
+  { id: 11, layout: "grid_4x4_obs", chapter: 2, waveBonus: 8,  unlock: ["枪","弓"],                    rule: null },
+  { id: 12, layout: "grid_4x4_obs", chapter: 2, waveBonus: 9,  unlock: ["神"],                          rule: { type: "rider_mirror_boost", text: "镜像召唤概率提升！" } },
+  { id: 13, layout: "cross",        chapter: 2, waveBonus: 9,  unlock: ["炮","刺"],                    rule: { type: "rider_only", text: "本关考验骑马单位走格！" } },
+  { id: 14, layout: "cross",        chapter: 2, waveBonus: 10, unlock: ["豪"],                          rule: null },
+  { id: 15, layout: "cross",        chapter: 2, waveBonus: 12, unlock: ["甲","锤"],                    rule: { type: "boss", text: "牛魔王先锋到来！" } },
   { id: 16, layout: "triangle",     chapter: 2, waveBonus: 10, unlock: ["甲","锤"],                     rule: { type: "long_charge", text: "三角地形·骑兵冲锋距离+1格！" } },
   { id: 17, layout: "triangle",     chapter: 2, waveBonus: 11, unlock: [],                             rule: { type: "more_spawns", text: "怪物海！" } },
   { id: 18, layout: "dual_lane",    chapter: 2, waveBonus: 11, unlock: ["吒"],                          rule: null },

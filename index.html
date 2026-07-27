@@ -8,62 +8,163 @@
 </head>
 <body>
 <div id="app">
-  <!-- 顶部状态栏 -->
-  <div id="topbar">
-    <div class="tb-item chapter-tag" id="tbChapter">第1关</div>
-    <div class="tb-item heart">❤️ <span id="tbHp">100</span></div>
-    <div class="tb-item gold">💰 <span id="tbGold">0</span></div>
-    <div class="tb-item" id="tbWave">第1/6波</div>
-    <!-- 倍速按钮 -->
-    <div id="speedBar">
-      <button class="spd-btn active" data-spd="1">1×</button>
-      <button class="spd-btn" data-spd="2">2×</button>
-    </div>
-  </div>
 
-  <!-- 章节进度条 -->
+  <!-- ============ 战斗界面 ============ -->
+  <div id="battleView" class="view active">
+    <!-- 顶部状态栏 -->
+    <div id="topbar">
+      <div class="tb-left">
+        <div class="tb-item gold">💰 <span id="tbGold">0</span></div>
+      </div>
+      <div class="tb-center">
+        <div class="chapter-info">
+          <div class="chapter-title" id="tbChapter">第1章</div>
+          <div class="chapter-sub">历史最高: <span id="tbBestWave">0</span>/<span id="tbMaxWave">15</span></div>
+        </div>
+        <div class="wave-dots" id="waveDots">
+          <span class="dot active">1</span>
+          <span class="dot">2</span>
+          <span class="dot">3</span>
+          <span class="dot">4</span>
+          <span class="dot">5</span>
+        </div>
+      </div>
+      <div class="tb-right">
+        <button class="icon-btn" id="btnSettings">⚙️</button>
+        <button class="icon-btn speed-btn" id="btnSpeed">⏩<sup>x2</sup></button>
+      </div>
+    </div>
+
+    <!-- 基地满血按钮（右侧浮动） -->
+    <button id="btnFullHp" class="full-hp-btn hidden">
+      <span class="hp-icon">💚</span>
+      <span class="hp-text">基地满血</span>
+    </button>
+
+    <!-- 章节进度条 -->
     <div id="chapterTrack">
       <span id="chapterName">黄风岭</span>
       <div id="chapterDots"></div>
       <span id="goalText">骑马单位巡视格子</span>
     </div>
 
-  <!-- 关卡横幅（动态插入） -->
-  <div id="levelBanner" class="hidden"></div>
+    <!-- 关卡横幅 -->
+    <div id="levelBanner" class="hidden"></div>
 
-  <!-- 骑马面板（可拖拽，默认收起） -->
-  <div id="riderPanel" class="collapsed">
-    <div id="rpHandle" class="rp-handle">🐴</div>
-    <div class="rp-body"></div>
-  </div>
-
-  <!-- 主画布 -->
-  <canvas id="cv"></canvas>
-
-  <!-- 单位信息栏 -->
-  <div id="infoBar" class="hidden">
-    <span id="infoText"></span>
-    <button id="btnSell">出售</button>
-    <button id="btnCancel">取消</button>
-  </div>
-
-  <!-- 商店 -->
-  <div id="shop">
-    <div id="shopHead">
-      <span id="shopTitle">商店 · 补充阵地</span>
-      <button id="btnReroll">刷新 -2💰</button>
+    <!-- 骑马面板 -->
+    <div id="riderPanel" class="collapsed">
+      <div id="rpHandle" class="rp-handle">🐴</div>
+      <div class="rp-body"></div>
     </div>
-    <div id="cards"></div>
-    <div id="shopFoot">
-      <div id="hint">🐴 骑马单位已永久在场，路过友军召唤镜像！点卡牌→点格子放置兵种</div>
-      <button id="btnFight">开 战 ⚔️</button>
+
+    <!-- 主画布 -->
+    <canvas id="cv"></canvas>
+
+    <!-- 单位信息栏 -->
+    <div id="infoBar" class="hidden">
+      <span id="infoText"></span>
+      <button id="btnSell">出售</button>
+      <button id="btnCancel">取消</button>
+    </div>
+
+    <!-- 商店 -->
+    <div id="shop">
+      <div id="shopHead">
+        <span id="shopTitle">商 店</span>
+        <button id="btnReroll" class="reroll-btn">🔄 -2💰</button>
+      </div>
+      <div id="cards"></div>
+      <div id="shopFoot">
+        <div id="hint">🐴 骑马单位永久在场，路过友军充能镜魂！点卡牌→点格子放置兵种</div>
+        <button id="btnFight">开 战 ⚔️</button>
+      </div>
+    </div>
+
+    <!-- 战斗进度条 -->
+    <div id="battleBar" class="hidden">
+      <div id="waveProg"><div id="waveProgFill"></div></div>
+      <span id="battleText">妖怪来袭…</span>
     </div>
   </div>
 
-  <!-- 战斗进度条 -->
-  <div id="battleBar" class="hidden">
-    <div id="waveProg"><div id="waveProgFill"></div></div>
-    <span id="battleText">妖怪来袭…</span>
+  <!-- ============ 装备界面 ============ -->
+  <div id="equipView" class="view">
+    <div class="view-topbar">
+      <div class="vt-left">
+        <span class="res-item gold-res">💰 <span id="eqGold">0</span></span>
+        <span class="plus-btn" id="btnGoldPlus">+</span>
+      </div>
+      <div class="vt-right">
+        <span class="res-item dia-res">💎 <span id="eqDiamond">0</span></span>
+        <span class="plus-btn" id="btnDiaPlus">+</span>
+      </div>
+    </div>
+    <div class="view-scroll-title">
+      <span class="title-ornament left">⚜</span>
+      <span class="title-text">装 备</span>
+      <span class="title-ornament right">⚜</span>
+    </div>
+    <div class="equip-grid" id="equipGrid"></div>
+  </div>
+
+  <!-- ============ 天赋界面 ============ -->
+  <div id="talentView" class="view">
+    <div class="view-topbar">
+      <div class="vt-left">
+        <span class="res-item gold-res">💰 <span id="taGold">0</span></span>
+        <span class="plus-btn" id="btnTaGoldPlus">+</span>
+      </div>
+      <div class="vt-right">
+        <span class="res-item dia-res">💎 <span id="taDiamond">0</span></span>
+        <span class="plus-btn" id="btnTaDiaPlus">+</span>
+      </div>
+    </div>
+    <div class="view-scroll-title">
+      <span class="title-ornament left">⚜</span>
+      <span class="title-text">天 赋</span>
+      <span class="title-ornament right">⚜</span>
+    </div>
+    <div class="talent-container" id="talentContainer"></div>
+  </div>
+
+  <!-- ============ 胜利结算弹窗 ============ -->
+  <div id="victoryOverlay" class="hidden">
+    <div class="victory-bg"></div>
+    <div class="victory-box">
+      <div class="victory-title">胜 利</div>
+      <div class="victory-sub">完成波次: <span id="vicWave">0</span>/<span id="vicMaxWave">0</span></div>
+      <div class="victory-reward-title">奖 励</div>
+      <div class="victory-rewards">
+        <div class="reward-item gold-reward">
+          <span class="reward-icon">💰</span>
+          <span class="reward-num" id="vicGold">0</span>
+        </div>
+        <div class="reward-item dia-reward">
+          <span class="reward-icon">💎</span>
+          <span class="reward-num" id="vicDiamond">0</span>
+        </div>
+      </div>
+      <div class="victory-buttons">
+        <button class="vic-btn normal" id="btnVicNormal">普通领取</button>
+        <button class="vic-btn double" id="btnVicDouble">双倍领取 🎬</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 底部Tab栏 ============ -->
+  <div id="bottomTab">
+    <div class="tab-item active" data-tab="equip">
+      <span class="tab-icon">🪖</span>
+      <span class="tab-text">装备</span>
+    </div>
+    <div class="tab-item" data-tab="battle">
+      <span class="tab-icon">⚔️</span>
+      <span class="tab-text">战斗</span>
+    </div>
+    <div class="tab-item" data-tab="talent">
+      <span class="tab-icon">📜</span>
+      <span class="tab-text">天赋</span>
+    </div>
   </div>
 
   <!-- 弹窗 -->
@@ -76,9 +177,7 @@
   </div>
 </div>
 
-<!-- 脚本：先加载配置和骑马模块，再加载主逻辑 -->
-<script src="levels.js"></script>
-<script src="mobile.js"></script>
-<script src="game.js"></script>
+<!-- Vite 入口：通过 main.js 按顺序加载所有游戏脚本 -->
+<script type="module" src="/main.js"></script>
 </body>
 </html>
