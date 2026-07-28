@@ -239,7 +239,7 @@ function buildLayout() {
 
   const cx = W / 2, cy = H * 0.44;
   const maxDim = Math.max(layout.cols, layout.rows, 5);
-  const cellSize = Math.min(W * 0.95 / maxDim, H * 0.38 / maxDim, 70);
+  const cellSize = Math.min(W * 0.92 / maxDim, H * 0.55 / maxDim, 72);
   S.cellSize = cellSize;
 
   // 建立格子
@@ -1959,18 +1959,18 @@ function draw() {
     
     // 空格子背景（浅黄+加号）
     if (!u) {
-      ctx.fillStyle = '#f2dfa8';
+      ctx.fillStyle = '#f5ecd4';
       roundRect(-cw/2, -ch/2, cw, ch, cr);
       ctx.fill();
       
       // 细边框
-      ctx.strokeStyle = '#d4b87a';
+      ctx.strokeStyle = '#b8925a';
       ctx.lineWidth = 2;
       ctx.stroke();
       
       // 加号
-      ctx.fillStyle = '#b89560';
-      ctx.font = `900 ${s*0.4}px "PingFang SC",sans-serif`;
+      ctx.fillStyle = '#8a6840';
+      ctx.font = `900 ${s*0.35}px "PingFang SC",sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('+', 0, 0);
     } else {
@@ -1980,7 +1980,7 @@ function draw() {
       ctx.fill();
       
       // 边框
-      ctx.strokeStyle = '#c9a878';
+      ctx.strokeStyle = '#b8925a';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
