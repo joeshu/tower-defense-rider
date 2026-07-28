@@ -211,29 +211,29 @@ html, body {
 
 /* ---------- Shop ---------- */
 #shop {
-  flex: 0 0 220px; min-height: 220px;
+  flex: 0 0 180px; min-height: 180px;
   background: linear-gradient(180deg, #f5e6c8, #e8d6a8);
   border-top: 2px solid #c9a878;
-  padding: 0 12px calc(12px + env(safe-area-inset-bottom));
+  padding: 0 10px calc(8px + env(safe-area-inset-bottom));
   overflow: hidden;
   position: relative;
 }
 #shop.hidden { display: none; }
 #shopHead {
   display: flex; justify-content: center; align-items: center;
-  height: 40px; margin-bottom: 6px;
+  height: 32px; margin-bottom: 4px;
   position: relative;
 }
 #shopTitle {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 900;
   color: #8b5a2b;
   background: linear-gradient(180deg, #f8e8c8, #ead5a8);
   border: 2px solid #c9a878;
-  padding: 4px 28px;
+  padding: 3px 24px;
   border-radius: 6px;
   position: relative;
-  letter-spacing: 4px;
+  letter-spacing: 3px;
   text-shadow: 0 1px 0 rgba(255,255,255,0.5);
 }
 #shopTitle::before, #shopTitle::after {
@@ -242,10 +242,10 @@ html, body {
   top: 50%;
   transform: translateY(-50%);
   color: #c9a878;
-  font-size: 12px;
+  font-size: 10px;
 }
-#shopTitle::before { left: 8px; }
-#shopTitle::after { right: 8px; }
+#shopTitle::before { left: 6px; }
+#shopTitle::after { right: 6px; }
 #shop .reroll-btn {
   position: absolute;
   right: 0;
@@ -255,8 +255,8 @@ html, body {
   color: #fff; 
   border: 1px solid #8b6914;
   border-radius: 8px; 
-  padding: 5px 10px; 
-  font-size: 11px; 
+  padding: 4px 8px; 
+  font-size: 10px; 
   font-weight: 700;
   box-shadow: 0 2px 4px rgba(139,105,20,0.3);
   transition: transform .12s;
@@ -264,79 +264,71 @@ html, body {
 #shop .reroll-btn:active { transform: translateY(-50%) scale(0.96); }
 #shop .reroll-btn:disabled { opacity: .4; }
 
-/* ---------- Cards (水墨风格) ---------- */
+/* ---------- Cards ---------- */
 #cards {
-  display: flex; gap: 10px; justify-content: center;
-  height: 100px; margin-bottom: 8px;
+  display: flex; gap: 8px; justify-content: center;
+  height: 85px; margin-bottom: 6px;
 }
 .card {
-  flex: 1; max-width: 110px; height: 100px; overflow: hidden;
-  background: linear-gradient(180deg, #fffdf5, #f0e4c8);
-  border-radius: 6px; padding: 4px 2px 2px; text-align: center;
-  border: 2px solid #c9a878; 
+  flex: 1; max-width: 95px; height: 85px; overflow: hidden;
+  background: linear-gradient(180deg, #fffef6, #f5ebd0);
+  border-radius: 10px; padding: 4px 2px 2px; text-align: center;
+  border: 2px solid #d8b888; 
   position: relative;
   transition: transform .12s, box-shadow .12s;
   cursor: pointer;
-  box-shadow: 0 3px 6px rgba(139,90,43,0.2), inset 0 1px 0 rgba(255,255,255,0.7);
+  box-shadow: 0 3px 6px rgba(139,90,43,0.2);
 }
 .card::before {
   content: '';
   position: absolute;
-  top: 3px; left: 3px; right: 3px; bottom: 3px;
-  border: 1px solid rgba(201,168,120,0.4);
-  border-radius: 4px;
-  pointer-events: none;
-}
-.card::after {
-  content: '';
-  position: absolute;
-  top: -2px; left: -2px; right: -2px; height: 8px;
-  background: linear-gradient(180deg, rgba(201,168,120,0.5), transparent);
-  border-radius: 6px 6px 0 0;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border: 1.5px solid rgba(201,168,120,0.5);
+  border-radius: 7px;
   pointer-events: none;
 }
 .card:active { transform: scale(0.96); }
 .card.sel {
-  border-color: #c9a82e; 
-  transform: translateY(-8px);
-  box-shadow: 0 10px 25px rgba(201,168,46,0.4), inset 0 1px 0 rgba(255,255,255,0.8);
+  border-color: #e8b94a; 
+  transform: translateY(-4px);
+  box-shadow: 0 6px 14px rgba(201,168,46,0.35);
 }
 .card.sel::before {
-  border-color: rgba(201,168,46,0.6);
+  border-color: rgba(232,185,74,0.7);
 }
 .card.sold { opacity: .25; pointer-events: none; }
 .card .ch {
-  font-size: 34px; 
+  font-size: 30px; 
   font-weight: 900; 
-  color: #2a2118; 
+  color: #2a1a10; 
   line-height: 1.1;
+  margin-top: 4px;
   font-family: "STKaiti","KaiTi","楷体","PingFang SC",serif;
   text-shadow: 0 1px 0 rgba(255,255,255,0.5);
 }
 .card .nm { 
   font-size: 10px; 
-  color: #8b7a5a; 
-  margin-top: 2px; 
+  color: #8b7355; 
+  margin-top: 1px; 
   white-space: nowrap; 
-  font-weight: 600;
+  font-weight: 700;
 }
 .card .pr { 
-  margin-top: 3px; 
-  font-size: 14px; 
+  margin-top: 2px; 
+  font-size: 13px; 
   font-weight: 800; 
-  color: #a06018; 
+  color: #b86820; 
 }
 .card .tag {
   position: absolute; 
-  top: -8px; 
-  right: -6px;
-  background: linear-gradient(135deg, #c9483c, #a03028); 
+  top: -2px; 
+  right: -2px;
+  background: #4fc07a;
   color: #fff; 
   font-size: 9px;
-  border-radius: 6px; 
-  padding: 2px 5px; 
-  font-weight: 700;
-  box-shadow: 0 2px 4px rgba(201,72,60,0.3);
+  border-radius: 0 8px 0 6px; 
+  padding: 2px 6px; 
+  font-weight: 800;
   z-index: 2;
 }
 .card .tag.combo { 
@@ -346,17 +338,17 @@ html, body {
   background: linear-gradient(135deg, #d4882a, #a06018); 
 }
 .card .tag.new   { 
-  background: linear-gradient(135deg, #4fc07a, #30a058); 
+  background: #4fc07a;
 }
 
 /* ---------- Shop Footer ---------- */
-#shopFoot { height: 58px; display: flex; align-items: center; gap: 10px; }
+#shopFoot { height: 48px; display: flex; align-items: center; gap: 8px; }
 #hint { 
   flex: 1; 
   color: #7a6a4e; 
-  font-size: 11px; 
+  font-size: 10px; 
   line-height: 1.4; 
-  padding: 6px 8px;
+  padding: 5px 8px;
   background: rgba(139,106,74,0.08);
   border-radius: 6px;
   border: 1px solid rgba(201,168,120,0.3);
@@ -366,12 +358,12 @@ html, body {
   color: #fff;
   border: 2px solid #8b2818; 
   border-radius: 8px; 
-  padding: 10px 20px;
-  font-size: 16px; 
+  padding: 8px 16px;
+  font-size: 14px; 
   font-weight: 900; 
   letter-spacing: 2px;
   box-shadow: 
-    0 4px 10px rgba(176,56,32,.4), 
+    0 3px 8px rgba(176,56,32,.4), 
     inset 0 1px 0 rgba(255,255,255,0.3),
     inset 0 -2px 0 rgba(0,0,0,0.15);
   transition: transform .12s, box-shadow .12s;
@@ -707,40 +699,56 @@ html, body {
 /* ============================================================
  *  装备界面 - 武器网格
  * ============================================================ */
-.equip-grid {
+.equip-stacked {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  padding: 12px 8px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 6px;
   background: linear-gradient(180deg, #f8ecd0, #f0e0b8);
   -webkit-overflow-scrolling: touch;
+}
+.equip-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.equip-col .weapon-card {
+  width: 100%;
+  margin-bottom: -28px;
+  flex-shrink: 0;
+}
+.equip-col .weapon-card:first-child { margin-top: 4px; }
+.equip-col[data-col="1"] .weapon-card:nth-child(even),
+.equip-col[data-col="3"] .weapon-card:nth-child(even) {
+  transform: translateY(8px);
 }
 .weapon-card {
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, #fff4dc, #f5e6c0);
   border: 3px solid #c9a878;
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 4px 2px 6px;
   position: relative;
   cursor: pointer;
   transition: transform .15s, box-shadow .15s;
-  box-shadow: 0 3px 6px rgba(139,90,43,0.2);
+  box-shadow: 0 4px 8px rgba(139,90,43,0.25), 0 2px 4px rgba(0,0,0,0.1);
   overflow: hidden;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 3 / 4;
+  z-index: 1;
 }
-.weapon-card:active { transform: scale(0.96); }
+.weapon-card:active { transform: scale(0.96); z-index: 10; }
 .weapon-card .wp-level {
   position: absolute;
-  top: 4px; left: 6px;
-  font-size: 13px; font-weight: 900;
+  top: 4px; left: 8px;
+  font-size: 14px; font-weight: 900;
   color: #543818;
   text-shadow: 0 1px 1px rgba(255,255,255,0.6);
   z-index: 2;
 }
 .weapon-card .wp-name {
-  font-size: 14px; font-weight: 800;
+  font-size: 15px; font-weight: 800;
   color: #543818;
   text-align: center;
   margin-top: 4px;
@@ -749,7 +757,7 @@ html, body {
 .weapon-card .wp-big {
   flex: 1;
   display: flex; align-items: center; justify-content: center;
-  font-size: 32px; font-weight: 900;
+  font-size: 38px; font-weight: 900;
   color: #2a1a10;
   font-family: "STKaiti", "KaiTi", "楷体", serif;
   line-height: 1;
@@ -860,6 +868,257 @@ html, body {
 }
 
 /* ============================================================
+ *  挑战界面 - 日常任务 + 无尽模式 + 排行榜
+ * ============================================================ */
+.challenge-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 12px calc(20px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #f8ecd0, #f0e0b8);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 日常任务区 */
+.daily-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #fff4dc, #f5e6c0);
+  border: 2px solid #c9a878;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.daily-date {
+  font-size: 14px; font-weight: 900; color: #543818;
+  letter-spacing: 1px;
+}
+.daily-progress {
+  font-size: 13px; font-weight: 800;
+  color: #b8860b;
+  background: rgba(255,255,255,0.6);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.daily-tasks {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 16px;
+}
+.daily-task {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, #fff8e8, #f5e6c0);
+  border: 2px solid #c9a878;
+  border-radius: 12px;
+  padding: 10px 12px;
+  transition: all .2s;
+}
+.daily-task.done {
+  border-color: #54a868;
+  background: linear-gradient(180deg, #e8f5ec, #d4ebda);
+}
+.daily-task.claimed {
+  opacity: 0.5;
+  filter: grayscale(50%);
+}
+.dt-info { flex: 1; min-width: 0; }
+.dt-desc {
+  font-size: 14px; font-weight: 800; color: #3a2a18;
+  margin-bottom: 6px;
+}
+.dt-bar {
+  height: 6px;
+  background: rgba(0,0,0,0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.dt-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f4c95d, #d8a42f);
+  transition: width .3s ease;
+  border-radius: 3px;
+}
+.daily-task.done .dt-bar-fill {
+  background: linear-gradient(90deg, #54a868, #3d8a52);
+}
+.dt-meta {
+  display: flex; justify-content: space-between;
+  font-size: 12px; font-weight: 700;
+  color: #6b4520;
+}
+.dt-reward { color: #4a90d9; }
+
+.dt-btn {
+  padding: 6px 14px;
+  border: 2px solid #b8860b;
+  background: linear-gradient(180deg, #f4c95d, #d8a42f);
+  color: #3a2a18;
+  font-size: 12px; font-weight: 900;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+  box-shadow: 0 2px 4px rgba(184,134,11,0.3);
+}
+.dt-btn:active:not(:disabled) { transform: scale(0.92); }
+.dt-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+  background: linear-gradient(180deg, #c9b890, #a08050);
+  border-color: #6b5a30;
+}
+
+/* 无尽模式入口 */
+.endless-section {
+  background: linear-gradient(180deg, #2a1a4a, #1a0f30);
+  border: 3px solid #9333ea;
+  border-radius: 16px;
+  padding: 16px 14px;
+  margin-bottom: 14px;
+  color: #f4e8ff;
+  box-shadow: 0 4px 14px rgba(147,51,234,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+  position: relative;
+  overflow: hidden;
+}
+.endless-section::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at top, rgba(147,51,234,0.3), transparent 70%);
+  pointer-events: none;
+}
+.es-title {
+  font-size: 18px; font-weight: 900;
+  letter-spacing: 4px;
+  margin-bottom: 12px;
+  text-align: center;
+  text-shadow: 0 0 12px rgba(147,51,234,0.8);
+  position: relative;
+}
+.es-info {
+  display: flex; justify-content: space-around;
+  margin-bottom: 12px;
+  position: relative;
+}
+.es-stat {
+  font-size: 12px;
+  color: #d4c4f0;
+}
+.es-stat b {
+  color: #ffd880;
+  font-size: 16px;
+  font-weight: 900;
+  display: block;
+  margin-top: 2px;
+  text-shadow: 0 0 8px rgba(255,216,128,0.5);
+}
+.es-btn {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #ffd880;
+  background: linear-gradient(180deg, #9333ea, #6b1fb0);
+  color: #fff4d6;
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 3px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .2s;
+  box-shadow: 0 3px 10px rgba(147,51,234,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+  position: relative;
+}
+.es-btn:active { transform: scale(0.96); }
+.es-btn:hover { box-shadow: 0 4px 16px rgba(147,51,234,0.7); }
+
+/* 排行榜 */
+.leaderboard-section {
+  background: linear-gradient(180deg, #fff8e8, #f0e0b8);
+  border: 2px solid #c9a878;
+  border-radius: 12px;
+  padding: 12px;
+}
+.lb-title {
+  font-size: 16px; font-weight: 900;
+  color: #543818;
+  text-align: center;
+  margin-bottom: 10px;
+  letter-spacing: 2px;
+}
+.lb-empty {
+  text-align: center;
+  font-size: 13px;
+  color: #8a7050;
+  padding: 16px;
+  font-style: italic;
+}
+.lb-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.lb-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid #d4c4a0;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 700;
+  color: #543818;
+}
+.lb-row.first {
+  background: linear-gradient(180deg, #fff4d6, #f4c95d);
+  border-color: #b8860b;
+  color: #5a3a10;
+  box-shadow: 0 2px 8px rgba(244,201,93,0.4);
+}
+.lb-rank {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #8a7050;
+  color: white;
+  border-radius: 50%;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.lb-row.first .lb-rank { background: linear-gradient(180deg, #f4c95d, #b8860b); }
+.lb-wave { flex: 1; color: #b85c28; }
+.lb-kills { color: #6b4520; }
+.lb-time { color: #8a7050; font-size: 12px; }
+
+/* 无尽模式战斗HUD */
+#endlessHud {
+  position: absolute;
+  top: calc(56px + env(safe-area-inset-top));
+  left: 8px; right: 8px;
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(180deg, rgba(42,26,74,0.92), rgba(26,15,48,0.92));
+  border: 2px solid #9333ea;
+  border-radius: 12px;
+  padding: 6px 10px;
+  z-index: 30;
+  box-shadow: 0 3px 12px rgba(147,51,234,0.5);
+  backdrop-filter: blur(6px);
+}
+#endlessHud.hidden { display: none; }
+.eh-item {
+  font-size: 12px; font-weight: 800;
+  color: #f4e8ff;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.eh-item span { color: #ffd880; font-weight: 900; }
+.eh-wave { color: #ffd880; }
+.eh-end {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: linear-gradient(180deg, #d8542f, #a83a20);
+  color: white;
+  border: 2px solid #8a2a18;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 900;
+  cursor: pointer;
+  transition: transform .15s;
+}
+.eh-end:active { transform: scale(0.9); }
+
+
+/* ============================================================
  *  胜利结算界面
  * ============================================================ */
 #victoryOverlay {
@@ -964,3 +1223,14 @@ html, body {
   #shop { flex-basis: 170px; }
   #cards { height: 76px; }
 }
+
+/* ---------- 骑马战意条 + 主动技能 ---------- */
+#rageContainer { position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%); z-index: 15; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#rageBarBg { width: 200px; height: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); }
+#rageBar { height: 100%; width: 0%; background: linear-gradient(90deg, #f59e0b, #ef4444); transition: width 0.3s; border-radius: 6px; }
+#skillBtns { display: flex; gap: 8px; }
+.skill-btn { display: flex; flex-direction: column; align-items: center; padding: 6px 10px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; cursor: pointer; transition: all 0.2s; min-width: 56px; }
+.skill-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); }
+.skill-btn:active { transform: translateY(0); }
+.skill-icon { font-size: 22px; }
+.skill-name { font-size: 10px; color: #fff; margin-top: 2px; white-space: nowrap; }

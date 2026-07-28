@@ -2,8 +2,17 @@
  * game.js —— 你玩不过我吧 · 复刻版
  * 核心创新：骑马单位在格子上走格移动
  * 包含：30关 + 6种棋盘 + 格子走格AI + 5种骑术玩法
+ *
+ * 渐进式迁移：新架构模块在 window._Arc 中
+ *   - utils:    数学/随机/几何工具
+ *   - core:     GameState/EventBus/Grid
+ *   - config:   units/enemies/themes
+ *   - systems:  ShopSystem/BattleSystem
+ *   - render:   sprites/BattleRenderer
  * ============================================================ */
 'use strict';
+
+const Arc = window._Arc || {};
 
 // Polyfill for non-browser environments
 if (typeof requestAnimationFrame === 'undefined') {
@@ -70,6 +79,85 @@ const UNITS = {
   '枪': { cost: 3, name: '枪·长兵', atk: 12, range: 2,  aspd: 0.9, hp: 70,  color: '#5a8acc', desc: '贯穿伤害·克制骑', counter: '骑' },
 };
 
+/* ============ 元素反应系统 ============ */
+const ELEMENT_TYPES = {
+  '冰': 'ice', '火': 'fire', '毒': 'poison', '雷': 'lightning',
+};
+const ELEMENT_REACTIONS = {
+  'ice+fire':     { name: '蒸发',   color: '#ffffff', dmgMul: 2.0, effect: 'consume', desc: '伤害×2，消耗两层状态' },
+  'ice+lightning':{ name: '超导',   color: '#a0ffff', dmgMul: 1.5, effect: 'root',    rootTime: 2, desc: '伤害×1.5，定身2秒' },
+  'fire+poison':  { name: '燃爆',   color: '#ff6600', dmgMul: 1.0, effect: 'explode', radius: 1.5, desc: '毒雾被点燃，范围爆炸' },
+  'lightning+fire':{name: '过载',   color: '#ffaa00', dmgMul: 1.5, effect: 'chain',   desc: '链式闪电附加灼烧' },
+};
+
+function getElementKey(u) {
+  const d = UNITS[u.ch];
+  if (!d) return null;
+  if (d.burn) return 'fire';
+  if (d.slow) return 'ice';
+  if (d.poison) return 'poison';
+  if (d.aoe && u.ch === '雷') return 'lightning';
+  return null;
+}
+
+function tryElementReaction(enemy, newElement, dmg, state) {
+  // 检查敌人身上已有的元素状态
+  const existing = enemy._elementStatus || {};
+  const existingEl = existing.element;
+
+  if (existingEl && existingEl !== newElement) {
+    // 触发反应
+    const key1 = existingEl + '+' + newElement;
+    const key2 = newElement + '+' + existingEl;
+    const reaction = ELEMENT_REACTIONS[key1] || ELEMENT_REACTIONS[key2];
+
+    if (reaction) {
+      const finalDmg = dmg * reaction.dmgMul;
+      enemy.hp -= finalDmg;
+
+      // 反应特效
+      state.floats.push({
+        x: enemy.x, y: enemy.y - 20, t: 0,
+        txt: reaction.name + '!', color: reaction.color, big: true
+      });
+      state.fx.push({ type: 'ring', x: enemy.x, y: enemy.y, t: 0, r: 30, color: reaction.color, dur: 0.6 });
+      state.shake = Math.max(state.shake, 4);
+
+      // 日常挑战 & 无尽模式记录
+      EndlessMgr.recordReaction();
+      DailyMgr.addProgress('reaction', 1);
+
+      // 反应效果
+      if (reaction.effect === 'root') {
+        enemy.root = reaction.rootTime;
+      } else if (reaction.effect === 'explode') {
+        // 范围爆炸
+        const expR = state.cellSize * reaction.radius;
+        for (const e2 of state.enemies) {
+          if (e2.dead || e2 === enemy) continue;
+          if (dist(e2.x, e2.y, enemy.x, enemy.y) < expR) {
+            e2.hp -= finalDmg * 0.5;
+            state.floats.push({ x: e2.x, y: e2.y - 10, t: 0, txt: Math.round(finalDmg * 0.5), color: '#ff6600' });
+          }
+        }
+        state.fx.push({ type: 'boom', x: enemy.x, y: enemy.y, t: 0, r: expR });
+      } else if (reaction.effect === 'chain') {
+        // 闪电连锁
+        enemy.burn = 2;
+        enemy.burnDps = dmg * 0.3;
+      }
+
+      // consume: 消耗状态
+      enemy._elementStatus = {};
+      return finalDmg;
+    }
+  }
+
+  // 记录元素状态（持续3秒）
+  enemy._elementStatus = { element: newElement, timer: 3 };
+  return dmg;
+}
+
 const COMBO_INFO = {
   '唐僧': { desc: '唐僧·慈悲为怀：持续治疗+佛光普照大招', color: '#ffd700' },
   '悟空': { desc: '悟空·大闹天宫：金箍棒横扫+击飞', color: '#ff8c00' },
@@ -79,6 +167,46 @@ const COMBO_INFO = {
   '公豹': { desc: '公豹·截教天阵：召唤魔物+自爆', color: '#8b008b' },
 };
 const COMBO_PAIRS = [['唐','僧'], ['悟','空'], ['八','戒'], ['沙','僧'], ['姜','牙'], ['申','豹']];
+
+/* ============ 阵营羁绊系统 ============ */
+const FACTIONS = {
+  '天庭': { members: ['神','弓','枪','退'], color: '#fbbf24', icon: '☀️',
+    tier2: { atkMul: 1.15, desc: '攻击+15%' },
+    tier4: { atkMul: 1.15, bonusDmg: 1.3, bonusTarget: '妖魔', desc: '对妖魔伤害+30%' } },
+  '佛门': { members: ['唐','僧','悟','空','八','戒','沙'], color: '#ffd700', icon: '🛡️',
+    tier2: { allMul: 1.10, desc: '全属性+10%' },
+    tier4: { allMul: 1.10, heartRegen: 5, desc: '每5秒回心5血' } },
+  '截教': { members: ['姜','牙','申','豹','吒'], color: '#9333ea', icon: '🔮',
+    tier2: { aspdMul: 1.20, desc: '攻速+20%' },
+    tier4: { aspdMul: 1.20, killSummon: true, desc: '击杀召唤临时镜像' } },
+  '百姓': { members: ['箭','切','盾','速','疗'], color: '#4fc07a', icon: '🌾',
+    tier2: { costReduce: 1, desc: '费用-1' },
+    tier4: { costReduce: 1, goldMul: 1.25, desc: '金币收益+25%' } },
+};
+
+function getUnitFaction(ch) {
+  for (const [name, f] of Object.entries(FACTIONS)) {
+    if (f.members.includes(ch)) return name;
+  }
+  return null;
+}
+
+function computeFactionBoni(cells) {
+  const result = {}; // faction -> { count, tier, units: [cellIndices] }
+  for (const [fname, fdef] of Object.entries(FACTIONS)) {
+    const units = [];
+    cells.forEach((c, i) => {
+      if (!c.unit) return;
+      const fac = getUnitFaction(c.unit.ch);
+      if (fac === fname) units.push(i);
+    });
+    let tier = 0;
+    if (units.length >= 2) tier = 2;
+    if (units.length >= 4) tier = 4;
+    result[fname] = { count: units.length, tier, units, def: fdef };
+  }
+  return result;
+}
 
 /* ============ 全局状态 ============ */
 const S = {
@@ -100,6 +228,7 @@ const S = {
   unlockedTypes: [],  // 当前已解锁的单位类型
   speed: 1,           // 游戏速度 1x/2x
   layoutName: '',
+  riderRage: 0, riderRageMax: 100, riderSkillSlots: [], riderSkillCd: 0,
 };
 
 /* ============ 布局构建 ============ */
@@ -119,13 +248,36 @@ function buildLayout() {
   const slotSet = new Set(layout.slots.map(s => s[0] + ',' + s[1]));
   const obsSet = new Set((layout.obstacles || []).map(s => s[0] + ',' + s[1]));
 
-  // 中心格子位置
-  let centerGx, centerGy;
-  if (layout.type === 'cross') { centerGx = 2; centerGy = 2; }
-  else if (layout.type === 'spiral') { centerGx = 2; centerGy = 2; }
-  else { centerGx = Math.floor(layout.cols/2); centerGy = Math.floor(layout.rows/2); }
+  // 中心格子位置（优先使用布局配置中的定义）
+  let centerGx = layout.centerGx !== undefined ? layout.centerGx : Math.floor(layout.cols/2);
+  let centerGy = layout.centerGy !== undefined ? layout.centerGy : Math.floor(layout.rows/2);
 
-  S.heartX = cx; S.heartY = cy;
+  // 格子间距（正方形格子，间距更紧凑）
+  const cellGap = cellSize * 1.02;
+
+  // 根据布局类型调整心的位置偏移
+  let heartOffsetY = 0;
+  let heartScale = 1;
+  if (layout.type === 'ring') {
+    // 环形：心在正中心空地，稍大
+    heartOffsetY = 0;
+    heartScale = 1.1;
+  } else if (layout.type === 'cross') {
+    // 十字：心在中心，稍上移避开十字中心
+    heartOffsetY = -cellSize * 0.1;
+  } else if (layout.type === 'triangle') {
+    // 三角：心在底部两排中心
+    heartOffsetY = cellSize * 0.3;
+  } else if (layout.type === 'hex') {
+    // 六边形：心在正中心
+    heartOffsetY = 0;
+  } else {
+    // 默认网格：心在中心格子上方
+    heartOffsetY = -cellSize * 0.15;
+  }
+  S.heartX = cx;
+  S.heartY = cy + heartOffsetY;
+  S.heartScale = heartScale;
 
   // 特殊格子配置 { type: 'speed'|'rage'|'heal', cells: [[gx,gy],...] }
   const specialMap = {}; // key "gx,gy" → type
@@ -142,14 +294,14 @@ function buildLayout() {
       if (gx === centerGx && gy === centerGy) continue; // 心
       if (obsSet.has(key)) {
         // 记录障碍物像素位置
-        const px = cx + (gx - centerGx) * (cellSize * 1.08);
-        const py = cy + (gy - centerGy) * (cellSize * 1.08);
+        const px = cx + (gx - centerGx) * cellGap;
+        const py = cy + (gy - centerGy) * cellGap;
         obstaclesPix.push({ gx, gy, px, py });
         continue;
       }
 
-      const px = cx + (gx - centerGx) * (cellSize * 1.08);
-      const py = cy + (gy - centerGy) * (cellSize * 1.08);
+      const px = cx + (gx - centerGx) * cellGap;
+      const py = cy + (gy - centerGy) * cellGap;
 
       // 尝试按像素位置迁移旧单位
       let unit = null;
@@ -180,7 +332,10 @@ function adjacent(a, b) {
 /* ============ 组词 + 光环 ============ */
 function recompute() {
   const cells = S.cells;
-  for (const c of cells) if (c.unit) { c.unit.combo = false; c.unit.partner = -1; c.unit.aura = 1; }
+  for (const c of cells) if (c.unit) {
+    c.unit.combo = false; c.unit.partner = -1; c.unit.aura = 1;
+    c.unit._factionAtkMul = 1; c.unit._factionHpMul = 1; c.unit._factionAspdMul = 1;
+  }
   const pair = (a, b) => {
     const used = new Set();
     cells.forEach((ca, i) => {
@@ -202,6 +357,27 @@ function recompute() {
     cells.forEach(o => { if (o.unit && o.unit.ch === '速' && adjacent(c, o)) m += 0.35 * o.unit.lv; });
     c.unit.aura = m;
   });
+  // 阵营羁绊
+  S._factionBoni = computeFactionBoni(cells);
+  for (const [fname, fb] of Object.entries(S._factionBoni)) {
+    if (fb.tier === 0) continue;
+    const tierDef = fb.tier === 4 ? fb.def.tier4 : fb.def.tier2;
+    for (const idx of fb.units) {
+      const u = cells[idx].unit;
+      if (!u) continue;
+      if (tierDef.atkMul) u._factionAtkMul = tierDef.atkMul;
+      if (tierDef.allMul) { u._factionAtkMul = tierDef.allMul; u._factionHpMul = tierDef.allMul; }
+      if (tierDef.aspdMul) u._factionAspdMul = tierDef.aspdMul;
+    }
+  }
+  // 标记单位所在特殊格子
+  for (const c of cells) {
+    if (c.unit && c.special) {
+      c.unit._cellSpecial = c.special;
+    } else if (c.unit) {
+      c.unit._cellSpecial = null;
+    }
+  }
 }
 
 function makeUnit(ch) {
@@ -238,6 +414,16 @@ function effStat(u) {
     const finalStats = calcUnitFinalStats(u);
     const atkMul = finalStats.atk / Math.max(1, baseAtk);
     atk *= atkMul;
+  }
+
+  // 阵营羁绊加成
+  if (u._factionAtkMul) atk *= u._factionAtkMul;
+  if (u._factionAspdMul) aspd *= u._factionAspdMul;
+
+  // 特殊格子加成（需要传入cell参数）
+  if (u._cellSpecial) {
+    if (u._cellSpecial === 'speed') aspd *= 1.25;
+    if (u._cellSpecial === 'rage') { atk *= 1.30; u._critBonus = (u._critBonus || 0) + 0.30; }
   }
 
   return { atk, range, aspd, splash };
@@ -324,9 +510,31 @@ function renderCards() {
 const $ = id => document.getElementById(id);
 function syncTop() {
   const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
+  // 无尽模式：顶部显示无尽状态
+  if (EndlessMgr.isActive()) {
+    $('tbChapter').textContent = '♾️ 无尽';
+    $('tbGold').textContent = S.gold;
+    const waveDots = $('waveDots');
+    if (waveDots) waveDots.style.display = 'none';
+    const save = typeof SaveMgr !== 'undefined' ? SaveMgr.get() : null;
+    $('tbBestWave').textContent = save?.endless?.highestWave || 0;
+    $('tbMaxWave').textContent = '∞';
+    $('chapterName').textContent = '无尽模式';
+    $('chapterDots').style.background = `linear-gradient(90deg,#9333ea ${(S.wave % 10) * 10}%,#4a3070 ${(S.wave % 10) * 10}%)`;
+    $('goalText').textContent = `第${S.wave}波 | 每5波出BOSS`;
+    const btnFullHp = $('btnFullHp');
+    if (btnFullHp) {
+      btnFullHp.classList.toggle('hidden', S.phase !== 'battle' || S.heartHp >= S.heartMax);
+    }
+    updateRiderPanel();
+    return;
+  }
+  // 普通模式
+  const waveDotsEl = $('waveDots');
+  if (waveDotsEl) waveDotsEl.style.display = '';
   $('tbChapter').textContent = '第' + S.chapter + '章';
   $('tbGold').textContent = S.gold;
-  
+
   // 波次圆点
   const waveDots = $('waveDots');
   if (waveDots) {
@@ -337,12 +545,12 @@ function syncTop() {
       dot.classList.toggle('active', i < currentWave);
     });
   }
-  
+
   // 历史最高波次
   const save = typeof SaveMgr !== 'undefined' ? SaveMgr.get() : null;
   $('tbBestWave').textContent = save ? (save.highestWave || 0) : (S.wave - 1);
   $('tbMaxWave').textContent = 15;
-  
+
   const chapterNames = {1:'黄风岭', 2:'火焰山', 3:'灵山', 4:'封神台'};
   $('chapterName').textContent = chapterNames[S.chapter] || '';
   const prog = Math.min(100, S.wave / 6 * 100);
@@ -410,6 +618,9 @@ cv.addEventListener('pointerdown', e => {
 
     if (!cell.unit) {
       cell.unit = makeUnit(cd.ch);
+      // 无尽模式 + 日常：记录兵种使用
+      EndlessMgr.recordUnitUse(cd.ch);
+      DailyMgr.recordUnitUsed(cd.ch);
     } else if (cell.unit.ch === cd.ch) {
       cell.unit.lv++;
       cell.unit.maxHp = unitMaxHp(cell.unit);
@@ -508,13 +719,25 @@ function startWave() {
   hideInfo();
   S.phase = 'battle';
   const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
-  S.toSpawn = generateWave(S.level, S.wave);
+  // 无尽模式：使用 EndlessMgr 生成波次
+  if (EndlessMgr.isActive()) {
+    EndlessMgr.session.wave = (EndlessMgr.session.wave || 0) + 1;
+    S.wave = EndlessMgr.session.wave;
+    S.toSpawn = EndlessMgr.generateWave(S.wave);
+    // 日常挑战：记录无尽模式波次进度
+    DailyMgr.setProgress('endless_wave', S.wave);
+  } else {
+    S.toSpawn = generateWave(S.level, S.wave);
+  }
   S.waveTotal = S.toSpawn.length; S.waveKilled = 0;
   S.spawnT = 0.5;
   $('shop').classList.add('hidden');
   $('battleBar').classList.remove('hidden');
   $('battleText').textContent = '第' + S.wave + '波 来袭！';
   $('waveProgFill').style.width = '0%';
+  $('rageContainer')?.classList.remove('hidden');
+  rollSkillSlots();
+  updateEndlessHUD();
 }
 
 function hpMulForEnemy(level, wave, ch) {
@@ -522,6 +745,115 @@ function hpMulForEnemy(level, wave, ch) {
   let mul = (1 + 0.35 * (wave - 1)) * (lv.chapter === 1 ? 1 : (lv.chapter === 2 ? 1.8 : 2.5));
   if (lv.rule && lv.rule.type === 'fast_enemy' && ch !== 'boss') mul *= 1.2;
   return mul;
+}
+
+/* ============ BOSS多阶段系统 ============ */
+const BOSS_PHASES = {
+  '牛魔王': [
+    { hpPct: 1.0, name: '冲撞', spdMul: 1.0, atkMul: 1.0, behavior: 'normal', desc: '冲撞攻击' },
+    { hpPct: 0.66, name: '狂暴', spdMul: 1.5, atkMul: 1.3, behavior: 'armor', armor: 0.3, desc: '移速攻击大增，获得护甲' },
+    { hpPct: 0.33, name: '召唤', spdMul: 0, atkMul: 1.0, behavior: 'summon', summonInterval: 5, summonType: '妖', summonCount: 2, desc: '停下召唤妖兵' },
+  ],
+  '金翅大鹏': [
+    { hpPct: 1.0, name: '飞行', spdMul: 1.0, atkMul: 1.0, behavior: 'normal', desc: '高速飞行' },
+    { hpPct: 0.66, name: '俯冲', spdMul: 2.0, atkMul: 1.2, behavior: 'normal', desc: '极速俯冲' },
+    { hpPct: 0.33, name: '风暴', spdMul: 1.0, atkMul: 1.5, behavior: 'aoe_pulse', pulseInterval: 3, pulseRadius: 2.0, desc: '周期性风暴冲击' },
+  ],
+  '通天教主': [
+    { hpPct: 1.0, name: '施法', spdMul: 1.0, atkMul: 1.0, behavior: 'normal', desc: '正常施法' },
+    { hpPct: 0.66, name: '护盾', spdMul: 0.8, atkMul: 1.0, behavior: 'shield', shieldType: 'lightning', shieldHp: 200, desc: '雷盾（需雷元素破除）' },
+    { hpPct: 0.33, name: '灭世', spdMul: 0.5, atkMul: 2.0, behavior: 'aoe_pulse', pulseInterval: 4, pulseRadius: 3.0, desc: '全屏攻击' },
+  ],
+  '如来': [
+    { hpPct: 1.0, name: '金身', spdMul: 1.0, atkMul: 1.0, behavior: 'normal', desc: '金身罗汉' },
+    { hpPct: 0.66, name: '佛光', spdMul: 0.5, atkMul: 1.5, behavior: 'heal_self', healInterval: 5, healAmount: 50, desc: '周期回血' },
+    { hpPct: 0.33, name: '万佛朝宗', spdMul: 1.0, atkMul: 2.0, behavior: 'summon', summonInterval: 4, summonType: '鬼', summonCount: 3, desc: '召唤鬼兵围攻' },
+  ],
+  '鸿钧老祖': [
+    { hpPct: 1.0, name: '天道', spdMul: 1.0, atkMul: 1.0, behavior: 'normal', desc: '天道运转' },
+    { hpPct: 0.75, name: '混沌', spdMul: 1.3, atkMul: 1.3, behavior: 'armor', armor: 0.3, desc: '混沌护甲' },
+    { hpPct: 0.50, name: '灭世', spdMul: 1.0, atkMul: 1.5, behavior: 'aoe_pulse', pulseInterval: 3, pulseRadius: 2.5, desc: '灭世冲击' },
+    { hpPct: 0.25, name: '终极', spdMul: 1.5, atkMul: 2.0, behavior: 'summon', summonInterval: 3, summonType: '魔', summonCount: 3, desc: '终极召唤' },
+  ],
+};
+
+function getBossPhase(enemy) {
+  if (!enemy.boss) return null;
+  const phases = BOSS_PHASES[enemy.ch];
+  if (!phases) return null;
+  const hpRatio = enemy.hp / enemy.maxHp;
+  let currentPhase = phases[0];
+  for (const p of phases) {
+    if (hpRatio <= p.hpPct) currentPhase = p;
+  }
+  return currentPhase;
+}
+
+function updateBossBehavior(enemy, sdt, state) {
+  const phase = getBossPhase(enemy);
+  if (!phase) return;
+
+  // 阶段切换提示
+  if (enemy._lastPhaseName !== phase.name) {
+    enemy._lastPhaseName = phase.name;
+    state.floats.push({ x: enemy.x, y: enemy.y - 40, t: 0, txt: phase.name + '!', color: '#ff4444', big: true });
+    state.fx.push({ type: 'ring', x: enemy.x, y: enemy.y, t: 0, r: 50, color: '#ff4444', dur: 0.8 });
+    state.shake = Math.max(state.shake, 8);
+
+    // 护盾阶段
+    if (phase.behavior === 'shield') {
+      enemy.shield = phase.shieldHp;
+    }
+  }
+
+  // 应用阶段属性
+  enemy._spdMul = phase.spdMul;
+  enemy._atkMul = phase.atkMul;
+  enemy._armor = phase.armor || 0;
+
+  // 召唤行为
+  if (phase.behavior === 'summon') {
+    enemy._summonTimer = (enemy._summonTimer || 0) - sdt;
+    if (enemy._summonTimer <= 0) {
+      enemy._summonTimer = phase.summonInterval;
+      for (let i = 0; i < phase.summonCount; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const r = enemy.r + 20;
+        const sx = enemy.x + Math.cos(ang) * r;
+        const sy = enemy.y + Math.sin(ang) * r;
+        if (typeof spawnEnemy === 'function') {
+          spawnEnemyAt(phase.summonType, sx, sy);
+        }
+      }
+      state.floats.push({ x: enemy.x, y: enemy.y - 25, t: 0, txt: '召唤!', color: '#9333ea' });
+    }
+  }
+
+  // AOE脉冲
+  if (phase.behavior === 'aoe_pulse') {
+    enemy._pulseTimer = (enemy._pulseTimer || 0) - sdt;
+    if (enemy._pulseTimer <= 0) {
+      enemy._pulseTimer = phase.pulseInterval;
+      const pulseR = state.cellSize * phase.pulseRadius;
+      const pulseDmg = enemy.atk * 0.5;
+      // 对范围内单位造成渗透伤害到心
+      state.heartHp -= pulseDmg;
+      state.fx.push({ type: 'boom', x: enemy.x, y: enemy.y, t: 0, r: pulseR });
+      state.floats.push({ x: state.heartX, y: state.heartY - 20, t: 0, txt: '-' + Math.round(pulseDmg), color: '#ff6a6a' });
+      state.shake = Math.max(state.shake, 6);
+    }
+  }
+
+  // 自我回血
+  if (phase.behavior === 'heal_self') {
+    enemy._healTimer = (enemy._healTimer || 0) - sdt;
+    if (enemy._healTimer <= 0) {
+      enemy._healTimer = phase.healInterval;
+      enemy.hp = Math.min(enemy.maxHp, enemy.hp + phase.healAmount);
+      state.floats.push({ x: enemy.x, y: enemy.y - 20, t: 0, txt: '+' + phase.healAmount, color: '#22c55e' });
+      state.fx.push({ type: 'combo_heal', x: enemy.x, y: enemy.y, t: 0, r: 30, dur: 0.6 });
+    }
+  }
 }
 
 function spawnEnemy(chName) {
@@ -533,27 +865,70 @@ function spawnEnemy(chName) {
   else if (side === 1) { x = Math.random() * W; y = H * 0.78 + m; }
   else if (side === 2) { x = -m; y = Math.random() * H * 0.7; }
   else { x = W + m; y = Math.random() * H * 0.7; }
-  const mul = hpMulForEnemy(S.level, S.wave, chName);
+  let mul, spdMul = 1, atkMul = 1;
+  if (EndlessMgr.isActive()) {
+    const scale = EndlessMgr.getEnemyScale(S.wave);
+    mul = scale.hpMul; spdMul = scale.spdMul; atkMul = scale.atkMul;
+  } else {
+    mul = hpMulForEnemy(S.level, S.wave, chName);
+    spdMul = S.level > 15 ? 1.1 : 1;
+    atkMul = S.chapter >= 2 ? 1.3 : 1;
+  }
   S.enemies.push({
     ch: chName, x, y,
     hp: d.hp * mul, maxHp: d.hp * mul,
-    spd: d.spd * (S.level > 15 ? 1.1 : 1), atk: d.atk * (S.chapter >= 2 ? 1.3 : 1),
+    spd: d.spd * spdMul, atk: d.atk * atkMul,
     r: d.r, cd: 0, boss: !!d.boss, elite: !!d.elite, dead: false,
+    pathCooldown: 0, pathTarget: null,
   });
 }
 
-/* ============ 战斗逻辑 ============ */
-function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+function spawnEnemyAt(chName, x, y) {
+  const def = ENEMY_DEFS[chName];
+  if (!def) return;
+  const lv = S.level;
+  const hpMul = (1 + 0.35 * (S.wave - 1)) * (S.chapter === 1 ? 1 : S.chapter === 2 ? 1.8 : 2.5);
+  const e = {
+    ch: chName, hp: def.hp * hpMul, maxHp: def.hp * hpMul,
+    spd: def.spd * (lv > 15 ? 1.1 : 1), atk: def.atk * (S.chapter >= 2 ? 1.3 : 1),
+    r: def.r, color: def.color, gold: def.gold, elite: def.elite, boss: def.boss,
+    x, y, cd: 0, dead: false, slow: 0, burn: 0, burnDps: 0, stun: 0, root: 0,
+    knockback: 0, knockbackX: 0, knockbackY: 0, jiangSlow: 0,
+    pathCooldown: 0, pathTarget: null,
+  };
+  S.enemies.push(e);
+}
 
-function damageEnemy(e, dmg, color) {
+/* ============ 战斗逻辑 ============ */
+const dist = Arc.utils?.dist || function(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); };
+
+function damageEnemy(e, dmg, color, attacker) {
+  // 元素反应检测
+  if (attacker && attacker.unit) {
+    const el = getElementKey(attacker.unit);
+    if (el) {
+      dmg = tryElementReaction(e, el, dmg, S);
+    }
+  }
   e.hp -= dmg;
   S.floats.push({ x: e.x + (Math.random()-0.5)*12, y: e.y - 12, t: 0, txt: Math.round(dmg), color: color || '#fff' });
   if (e.hp <= 0 && !e.dead) {
     e.dead = true;
     const g = ENEMY_DEFS[e.ch] ? ENEMY_DEFS[e.ch].gold : 1;
-    S.gold += g; S.waveKilled++;
+    // 无尽模式：金币奖励按波次倍率加成
+    let goldGain = g;
+    if (EndlessMgr.isActive()) {
+      const scale = EndlessMgr.getEnemyScale(S.wave);
+      goldGain = Math.floor(g * scale.goldMul);
+      EndlessMgr.recordKill(e);
+    }
+    S.gold += goldGain; S.waveKilled++;
+    // 日常挑战：击杀计数
+    DailyMgr.addProgress('kill', 1);
+    if (e.boss) DailyMgr.addProgress('kill_boss', 1);
+    gainRiderRage(2);
     S.fx.push({ type: 'ring', x: e.x, y: e.y, t: 0, r: e.r, color: ENEMY_DEFS[e.ch] ? ENEMY_DEFS[e.ch].color : '#fff' });
-    S.floats.push({ x: e.x, y: e.y - 26, t: 0, txt: '+' + g + '💰', color: '#f4c95d' });
+    S.floats.push({ x: e.x, y: e.y - 26, t: 0, txt: '+' + goldGain + '💰', color: '#f4c95d' });
   }
 }
 
@@ -565,6 +940,151 @@ function unitTarget(cell, range) {
     if (d <= (range + e.r) * S.cellSize * 0.5 && d < bd) { bd = d; best = e; }
   }
   return best;
+}
+
+/* ============ 骑马主动技能系统 ============ */
+const ACTIVE_SKILL_DEFS = {
+  firetrail: { name: '烈焰冲锋', icon: '🔥', cost: 100, color: '#ff6a2a', desc: '指定方向铺火墙',
+    cast(state, cell) {
+      // 在格子周围3格铺火
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      const pick = dirs[Math.floor(Math.random()*4)];
+      for (let i = 1; i <= 3; i++) {
+        const tx = cell.gc + pick[0]*i, ty = cell.gr + pick[1]*i;
+        const c = state.cells.find(cc => cc.gc === tx && cc.gr === ty);
+        if (c) { c._fireTrail = 3; c._fireDmg = 10; }
+      }
+      state.fx.push({ type: 'boom', x: cell.px, y: cell.py, t: 0, r: state.cellSize * 2 });
+      state.shake = Math.max(state.shake, 5);
+    }
+  },
+  whirlwind: { name: '旋风斩', icon: '🌀', cost: 100, color: '#ff66ff', desc: '范围横扫',
+    cast(state, cell) {
+      const r = state.cellSize * 2;
+      const dmg = 40 * Math.pow(1.4, (state.riders[0]?.lv||1) - 1);
+      for (const e of state.enemies) {
+        if (e.dead) continue;
+        if (dist(e.x, e.y, cell.px, cell.py) < r) {
+          e.hp -= dmg;
+          state.floats.push({ x: e.x, y: e.y - 10, t: 0, txt: '🌀' + Math.round(dmg), color: '#ff66ff' });
+        }
+      }
+      state.fx.push({ type: 'ring', x: cell.px, y: cell.py, t: 0, r, color: '#ff66ff', dur: 0.5 });
+      state.shake = Math.max(state.shake, 6);
+    }
+  },
+  thunder: { name: '雷霆一击', icon: '🌩️', cost: 100, color: '#ffdd00', desc: 'BOSS高额伤害',
+    cast(state, cell) {
+      // 找最近的BOSS/精英
+      let target = null, bd = Infinity;
+      for (const e of state.enemies) {
+        if (e.dead || (!e.boss && !e.elite)) continue;
+        const d = dist(e.x, e.y, cell.px, cell.py);
+        if (d < bd) { bd = d; target = e; }
+      }
+      if (!target) {
+        // 没有BOSS就打最近敌人
+        for (const e of state.enemies) {
+          if (e.dead) continue;
+          const d = dist(e.x, e.y, cell.px, cell.py);
+          if (d < bd) { bd = d; target = e; }
+        }
+      }
+      if (target) {
+        const dmg = 80 * Math.pow(1.4, (state.riders[0]?.lv||1) - 1);
+        target.hp -= dmg;
+        target.stun = 1.5;
+        state.floats.push({ x: target.x, y: target.y - 20, t: 0, txt: '🌩️' + Math.round(dmg), color: '#ffdd00', big: true });
+        state.fx.push({ type: 'boom', x: target.x, y: target.y, t: 0, r: 40 });
+        state.shake = Math.max(state.shake, 10);
+      }
+    }
+  },
+  heal: { name: '治愈光环', icon: '💚', cost: 100, color: '#44ff88', desc: '回心+护盾',
+    cast(state, cell) {
+      const heal = 30;
+      state.heartHp = Math.min(state.heartMax, state.heartHp + heal);
+      state.floats.push({ x: state.heartX, y: state.heartY - 30, t: 0, txt: '+' + heal, color: '#44ff88', big: true });
+      // 给附近单位加护盾
+      for (const c of state.cells) {
+        if (c.unit && dist(c.px, c.py, cell.px, cell.py) < state.cellSize * 2) {
+          c.unit.shield = (c.unit.shield || 0) + 20;
+        }
+      }
+      state.fx.push({ type: 'combo_heal', x: cell.px, y: cell.py, t: 0, r: state.cellSize * 2, dur: 0.8 });
+    }
+  },
+  rally: { name: '集结号角', icon: '📯', cost: 100, color: '#ffdd44', desc: '全体攻速buff',
+    cast(state, cell) {
+      for (const c of state.cells) {
+        if (c.unit) c.unit.rallyBuff = 5;
+      }
+      state.floats.push({ x: cell.px, y: cell.py - 30, t: 0, txt: '📯集结!', color: '#ffdd44', big: true });
+      state.fx.push({ type: 'ring', x: cell.px, y: cell.py, t: 0, r: state.cellSize * 3, color: '#ffdd44', dur: 0.6 });
+    }
+  },
+};
+
+function gainRiderRage(amount) {
+  S.riderRage = Math.min(S.riderRageMax, S.riderRage + amount);
+  updateRageBar();
+}
+
+function updateRageBar() {
+  const bar = document.getElementById('rageBar');
+  if (!bar) return;
+  const pct = (S.riderRage / S.riderRageMax) * 100;
+  bar.style.width = pct + '%';
+  const skills = document.getElementById('skillBtns');
+  if (skills) {
+    skills.style.opacity = S.riderRage >= 100 ? '1' : '0.4';
+    skills.style.pointerEvents = S.riderRage >= 100 ? 'auto' : 'none';
+  }
+}
+
+function rollSkillSlots() {
+  const allKeys = Object.keys(ACTIVE_SKILL_DEFS);
+  const picked = [];
+  const pool = [...allKeys];
+  for (let i = 0; i < 3 && pool.length > 0; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  S.riderSkillSlots = picked;
+  renderSkillButtons();
+}
+
+function renderSkillButtons() {
+  const container = document.getElementById('skillBtns');
+  if (!container) return;
+  container.innerHTML = '';
+  S.riderSkillSlots.forEach(key => {
+    const def = ACTIVE_SKILL_DEFS[key];
+    const btn = document.createElement('button');
+    btn.className = 'skill-btn';
+    btn.innerHTML = `<span class="skill-icon">${def.icon}</span><span class="skill-name">${def.name}</span>`;
+    btn.title = def.desc;
+    btn.onclick = () => castActiveSkill(key);
+    container.appendChild(btn);
+  });
+}
+
+function castActiveSkill(key) {
+  const def = ACTIVE_SKILL_DEFS[key];
+  if (!def) return;
+  if (S.riderRage < def.cost) return;
+  if (!S.selCell || S.selCell < 0) {
+    // 没选格子时，以心为中心
+    const heartCell = S.cells.find(c => Math.abs(c.px - S.heartX) < 5 && Math.abs(c.py - S.heartY) < 5) || S.cells[0];
+    if (heartCell) def.cast(S, heartCell);
+  } else {
+    def.cast(S, S.cells[S.selCell]);
+  }
+  S.riderRage = 0;
+  updateRageBar();
+  rollSkillSlots();
+  S.selCell = -1;
+  hideInfo();
 }
 
 function updateBattle(dt) {
@@ -737,7 +1257,7 @@ function updateBattle(dt) {
 
     // ===== 退·力士：击退敌人 =====
     if (UNITS[u.ch].knockback) {
-      damageEnemy(tg, st.atk, '#60a5fa');
+      damageEnemy(tg, st.atk, '#60a5fa', { unit: u });
       tg.knockback = 0.5;
       tg.knockbackX = (tg.x - cell.px) * 0.6;
       tg.knockbackY = (tg.y - cell.py) * 0.6;
@@ -752,7 +1272,7 @@ function updateBattle(dt) {
       if (st.range > 1) {
         S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: finalDmg, splash: st.splash, t: 0, color: '#fbbf24' });
       } else {
-        damageEnemy(tg, finalDmg, '#fbbf24');
+        damageEnemy(tg, finalDmg, '#fbbf24', { unit: u });
         S.fx.push({ type: 'slash', x: tg.x, y: tg.y, t: 0 });
       }
       if (isYao) {
@@ -766,7 +1286,7 @@ function updateBattle(dt) {
       if (st.range > 1) {
         S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: '#f59e0b', goldDrop: true });
       } else {
-        damageEnemy(tg, st.atk, '#f59e0b');
+        damageEnemy(tg, st.atk, '#f59e0b', { unit: u });
         S.fx.push({ type: 'slash', x: tg.x, y: tg.y, t: 0 });
       }
       return;
@@ -782,9 +1302,9 @@ function updateBattle(dt) {
 
     // 普通攻击
     if (st.range > 1) {
-      S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: u.combo ? '#ffb84f' : UNITS[u.ch].color });
+      S.shots.push({ x: cell.px, y: cell.py, tx: tg.x, ty: tg.y, tg, dmg: st.atk, splash: st.splash, t: 0, color: u.combo ? '#ffb84f' : UNITS[u.ch].color, attacker: { unit: u } });
     } else {
-      damageEnemy(tg, st.atk, '#ffd0a0');
+      damageEnemy(tg, st.atk, '#ffd0a0', { unit: u });
       S.fx.push({ type: 'slash', x: tg.x, y: tg.y, t: 0 });
     }
   });
@@ -797,7 +1317,7 @@ function updateBattle(dt) {
     if (d < 12 || s.t > 1.6) {
       s.done = true;
       if (s.tg && !s.tg.dead) {
-        damageEnemy(s.tg, s.dmg, s.splash ? '#ffb84f' : '#cfe8ff');
+        damageEnemy(s.tg, s.dmg, s.splash ? '#ffb84f' : '#cfe8ff', s.attacker);
         // ===== 豪·财神：击杀掉落额外金币 =====
         if (s.goldDrop && s.tg.hp <= 0) {
           const extraGold = Math.floor(Math.random() * 3) + 2;
@@ -806,7 +1326,7 @@ function updateBattle(dt) {
         }
         if (s.splash) {
           S.fx.push({ type: 'boom', x: s.tg.x, y: s.tg.y, t: 0, r: s.splash });
-          S.enemies.forEach(e2 => { if (!e2.dead && e2 !== s.tg && dist(e2.x,e2.y,s.tx,s.ty) < s.splash) damageEnemy(e2, s.dmg*0.6, '#ffb84f'); });
+          S.enemies.forEach(e2 => { if (!e2.dead && e2 !== s.tg && dist(e2.x,e2.y,s.tx,s.ty) < s.splash) damageEnemy(e2, s.dmg*0.6, '#ffb84f', s.attacker); });
         }
       }
     } else {
@@ -872,6 +1392,41 @@ function updateBattle(dt) {
     }
   }
 
+  // 佛门羁绊：每5秒回心
+  if (S._factionBoni) {
+    for (const [fname, fb] of Object.entries(S._factionBoni)) {
+      if (fb.tier < 4) continue;
+      const tierDef = fb.def.tier4;
+      if (tierDef.heartRegen) {
+        fb._regenTimer = (fb._regenTimer || 0) - sdt;
+        if (fb._regenTimer <= 0) {
+          fb._regenTimer = 5;
+          S.heartHp = Math.min(S.heartMax, S.heartHp + tierDef.heartRegen);
+          S.floats.push({ x: S.heartX, y: S.heartY - 30, t: 0, txt: '+' + tierDef.heartRegen, color: '#ffd700' });
+        }
+      }
+    }
+  }
+
+  // 骑马战意积累：每秒+3，击杀由骑马造成的伤害时额外+5
+  S._rageTimer = (S._rageTimer || 0) + sdt;
+  if (S._rageTimer >= 1) {
+    S._rageTimer = 0;
+    gainRiderRage(3);
+  }
+
+  // 愈格子：每3秒回心1血
+  S._healCellTimer = (S._healCellTimer || 0) + sdt;
+  if (S._healCellTimer >= 3) {
+    S._healCellTimer = 0;
+    for (const c of S.cells) {
+      if (c.unit && c.special === 'heal') {
+        S.heartHp = Math.min(S.heartMax, S.heartHp + 1);
+        break; // 每次只回1点
+      }
+    }
+  }
+
   // 敌人移动/攻击
   for (const e of S.enemies) {
     if (e.dead) continue;
@@ -884,29 +1439,85 @@ function updateBattle(dt) {
     }
     if (e.stun > 0) { e.stun -= sdt; continue; }
     if (e.burning > 0) e.burning -= sdt;
+    if (e._elementStatus && e._elementStatus.timer > 0) {
+      e._elementStatus.timer -= sdt;
+      if (e._elementStatus.timer <= 0) e._elementStatus = {};
+    }
+
+    // BOSS阶段行为
+    if (e.boss) updateBossBehavior(e, sdt, S);
 
     let spdMul = 1;
+    if (e.boss && e._spdMul) spdMul *= e._spdMul;
     if (e.jiangSlow > 0) spdMul *= 0.65;
     if (e.root > 0) spdMul = 0;
 
-    let tgx = S.heartX, tgy = S.heartY, tgCell = null, tgMirror = null, bd = dist(e.x, e.y, S.heartX, S.heartY);
-    for (const c of S.cells) {
-      if (!c.unit) continue;
-      const d = dist(e.x, e.y, c.px, c.py);
-      if (d < bd) { bd = d; tgx = c.px; tgy = c.py; tgCell = c; tgMirror = null; }
+    // 路径决策：每1.5秒重新计算目标
+    e.pathCooldown -= sdt;
+    if (e.pathCooldown <= 0 || !e.pathTarget) {
+      e.pathCooldown = 1.5 + Math.random() * 0.5;
+      // 找最近的单位作为阻挡目标
+      let nearestUnit = null, nearestDist = Infinity;
+      for (const c of S.cells) {
+        if (!c.unit) continue;
+        const d = dist(e.x, e.y, c.px, c.py);
+        if (d < nearestDist) { nearestDist = d; nearestUnit = c; }
+      }
+      // 某些敌人类型（魔、小钻风）有绕路能力：如果单位挡路，绕到心的方向
+      const canFlank = (e.ch === '魔' || e.ch === '小钻风' || e.boss);
+      if (canFlank && nearestUnit && nearestDist < S.cellSize * 2) {
+        const angleToHeart = Math.atan2(S.heartY - e.y, S.heartX - e.x);
+        const sideAngle = Math.random() < 0.5 ? 0.6 : -0.6;
+        const flankAngle = angleToHeart + sideAngle;
+        const flankDist = S.cellSize * 1.5;
+        e.pathTarget = {
+          x: e.x + Math.cos(flankAngle) * flankDist,
+          y: e.y + Math.sin(flankAngle) * flankDist
+        };
+      } else if (nearestUnit && nearestDist < S.cellSize * 1.2) {
+        e.pathTarget = { x: nearestUnit.px, y: nearestUnit.py };
+      } else {
+        e.pathTarget = { x: S.heartX, y: S.heartY };
+      }
     }
-    // 镜像也是攻击目标
+
+    // 镜像也是攻击目标（保留原逻辑）
     if (S.riderMirrors) {
       for (const m of S.riderMirrors) {
         if (m.dead) continue;
         const d = Math.hypot(m.x - e.x, m.y - e.y);
-        if (d < bd) { bd = d; tgx = m.x; tgy = m.y; tgCell = null; tgMirror = m; }
+        if (d < S.cellSize * 1.5) {
+          e.pathTarget = { x: m.x, y: m.y };
+          break;
+        }
+      }
+    }
+
+    // 朝 pathTarget 移动
+    const tgx = e.pathTarget.x, tgy = e.pathTarget.y;
+    const pathD = dist(e.x, e.y, tgx, tgy);
+
+    // 攻击目标判定（单位/镜像/心），用于到达 reach 后攻击
+    let tgCell = null, tgMirror = null, bd = dist(e.x, e.y, S.heartX, S.heartY);
+    for (const c of S.cells) {
+      if (!c.unit) continue;
+      const d = dist(e.x, e.y, c.px, c.py);
+      if (d < bd) { bd = d; tgCell = c; tgMirror = null; }
+    }
+    if (S.riderMirrors) {
+      for (const m of S.riderMirrors) {
+        if (m.dead) continue;
+        const d = Math.hypot(m.x - e.x, m.y - e.y);
+        if (d < bd) { bd = d; tgCell = null; tgMirror = m; }
       }
     }
     const reach = (tgCell || tgMirror) ? S.cellSize * 0.55 + e.r : S.cellSize * 0.45 + e.r;
+
     if (bd > reach) {
-      const k = (e.spd * spdMul * sdt) / bd;
-      e.x += (tgx - e.x) * k; e.y += (tgy - e.y) * k;
+      if (pathD > 1) {
+        const k = (e.spd * spdMul * sdt) / pathD;
+        e.x += (tgx - e.x) * k; e.y += (tgy - e.y) * k;
+      }
     } else {
       e.cd -= sdt;
       if (e.cd <= 0) {
@@ -914,6 +1525,7 @@ function updateBattle(dt) {
         if (tgMirror) {
           // ===== 攻击镜像 =====
           let dmg = e.atk;
+          if (e._atkMul) dmg *= e._atkMul;
           tgMirror.hp -= dmg;
           S.floats.push({ x: tgMirror.x, y: tgMirror.y + 10, t: 0, txt: '-' + Math.round(dmg), color: '#ff9a9a' });
           S.fx.push({ type: 'slash', x: tgMirror.x, y: tgMirror.y, t: 0 });
@@ -937,55 +1549,33 @@ function updateBattle(dt) {
           }
         } else if (tgCell) {
           let dmg = e.atk;
+          if (e._atkMul) dmg *= e._atkMul;
           const shaCell = S.cells.find(c => c.unit && c.unit.combo && UNITS[c.unit.ch].combo === '沙僧' && adjacent(c, tgCell));
           if (shaCell) {
             const share = dmg * 0.3;
             dmg *= 0.7;
-            shaCell.unit.hp -= share * 0.5;
-            S.floats.push({ x: shaCell.px, y: shaCell.py + 8, t: 0, txt: '-' + Math.round(share * 0.5), color: '#2e8b57' });
+            S.floats.push({ x: shaCell.px, y: shaCell.py + 8, t: 0, txt: '🛡️', color: '#2e8b57' });
           }
           if (tgCell.unit.shield && tgCell.unit.shield > 0) {
             const sa = Math.min(tgCell.unit.shield, dmg);
             tgCell.unit.shield -= sa;
             dmg -= sa;
-            if (sa > 0) S.floats.push({ x: tgCell.px, y: tgCell.py - 4, t: 0, txt: '🛡️' + Math.round(sa), color: '#88ddff' });
+            if (sa > 0) S.floats.push({ x: tgCell.px, y: tgCell.py - 4, t: 0, txt: '🛡️', color: '#88ddff' });
           }
-          tgCell.unit.hp -= dmg;
+          // 单位无敌，只显示伤害数字但不会死亡
           S.floats.push({ x: tgCell.px, y: tgCell.py + 10, t: 0, txt: '-' + Math.round(dmg), color: '#ff9a9a' });
+          // 伤害转化为对心的少量渗透伤害（敌人攻击单位时，少量伤害会渗透到心）
+          const leakDmg = dmg * 0.15;
+          S.heartHp -= leakDmg;
+          if (leakDmg > 0.5) S.shake = Math.max(S.shake, 2);
           if (tgCell.unit.hp <= 0) {
-            if (tgCell.unit.combo && UNITS[tgCell.unit.ch].combo === '沙僧') {
-              const ed = 20 * Math.pow(1.5, tgCell.unit.lv - 1);
-              S.enemies.forEach(e2 => {
-                if (e2.dead) return;
-                if (dist(e2.x, e2.y, tgCell.px, tgCell.py) < S.cellSize * 1.8) {
-                  e2.hp -= ed;
-                  e2.stun = Math.max(e2.stun || 0, 1.0);
-                  S.floats.push({ x: e2.x, y: e2.y - 12, t: 0, txt: '💥' + Math.round(ed), color: '#2e8b57' });
-                }
-              });
-              S.fx.push({ type: 'combo_sha_explode', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize * 1.8, dur: 0.7 });
-              S.shake = Math.max(S.shake, 8);
-            }
-            // ===== 爆·炸弹：死亡时爆炸 =====
-            if (UNITS[tgCell.unit.ch].explode) {
-              const expDmg = 30 * Math.pow(1.5, tgCell.unit.lv - 1);
-              const expR = S.cellSize * 1.6;
-              S.enemies.forEach(e2 => {
-                if (e2.dead) return;
-                if (dist(e2.x, e2.y, tgCell.px, tgCell.py) < expR) {
-                  e2.hp -= expDmg;
-                  S.floats.push({ x: e2.x, y: e2.y - 12, t: 0, txt: '💥' + Math.round(expDmg), color: '#ef4444' });
-                }
-              });
-              S.fx.push({ type: 'boom', x: tgCell.px, y: tgCell.py, t: 0, r: expR });
-              S.shake = Math.max(S.shake, 6);
-            }
-            S.fx.push({ type: 'ring', x: tgCell.px, y: tgCell.py, t: 0, r: S.cellSize/2, color: '#ff6a6a' });
-            tgCell.unit = null; recompute();
+            // 单位无敌，血量保持1点不死
+            tgCell.unit.hp = 1;
           }
         } else {
-          S.heartHp -= e.atk; S.shake = 8;
-          S.floats.push({ x: S.heartX, y: S.heartY - 20, t: 0, txt: '-' + Math.round(e.atk), color: '#ff6a6a' });
+          const heartDmg = e.atk * (e._atkMul || 1);
+          S.heartHp -= heartDmg; S.shake = 8;
+          S.floats.push({ x: S.heartX, y: S.heartY - 20, t: 0, txt: '-' + Math.round(heartDmg), color: '#ff6a6a' });
         }
       }
     }
@@ -1093,6 +1683,35 @@ function setupRiderPanelDrag() {
 
 /* ============ 波次结算 ============ */
 function waveClear() {
+  // 日常挑战：完成波次
+  DailyMgr.addProgress('clear_wave', 1);
+
+  // 无尽模式：无限波次，每5波给钻石
+  if (EndlessMgr.isActive()) {
+    const reward = EndlessMgr.getWaveReward(S.wave);
+    S.gold += reward.gold;
+    let diaMsg = '';
+    if (reward.diamond > 0) {
+      SaveMgr.addDiamond(reward.diamond);
+      diaMsg = ' +' + reward.diamond + '💎';
+    }
+    S.wave = EndlessMgr.session.wave + 1; // 下一波（toShop 会用）
+    // 无尽模式不进入商店的卡牌重滚，直接开始下一波
+    $('battleBar').classList.add('hidden');
+    $('rageContainer')?.classList.add('hidden');
+    S.phase = 'shop';
+    $('shop').classList.remove('hidden');
+    $('btnReroll').disabled = false;
+    rollCards();
+    $('hint').textContent = `♾️ 无尽模式 第${S.wave}波预览 | 上波奖励 +${reward.gold}💰${diaMsg} | 心血不会回复，谨慎布阵！`;
+    toast(`第${EndlessMgr.session.wave}波清场 +${reward.gold}💰${diaMsg}`);
+    // 无尽模式每次清场回血10点（最高不超过最大值）
+    S.heartHp = Math.min(S.heartMax, S.heartHp + 10);
+    syncTop();
+    updateEndlessHUD();
+    return;
+  }
+
   const lv = LEVELS.find(l => l.id === S.level) || LEVELS[0];
   const bonus = lv.waveBonus || 5;
   S.gold += bonus;
@@ -1128,6 +1747,7 @@ function toShop(bonus) {
   $('battleBar').classList.add('hidden');
   $('btnReroll').disabled = false;
   $('hint').textContent = '骑马单位已永久在场巡视，点卡牌→点格子放置兵种；同字合并升级';
+  $('rageContainer')?.classList.add('hidden');
   if (typeof bonus === 'number') toast('清场 +' + bonus + '💰');
   syncTop();
 }
@@ -1135,12 +1755,32 @@ function toShop(bonus) {
 function gameOver() {
   S.phase = 'over';
   $('shop').classList.add('hidden'); $('battleBar').classList.add('hidden');
+
+  // 无尽模式：结束会话并显示结算
+  if (EndlessMgr.isActive()) {
+    const info = EndlessMgr.getSessionInfo();
+    EndlessMgr.endSession();
+    $('endlessHud')?.classList.add('hidden');
+    overlay(
+      '无尽终结',
+      `♾️ 你坚持到了 <b style="color:#ffd880">第${info.wave}波</b><br>` +
+      `💀 总击杀: <b>${info.kills}</b> | 👑 BOSS击杀: <b>${info.bossKills}</b><br>` +
+      `⏱️ 用时: <b>${info.duration > 0 ? Math.floor(info.duration/60) + ':' + String(info.duration%60).padStart(2,'0') : '0:00'}</b><br>` +
+      `排行榜已更新！`,
+      '返回挑战',
+      () => { reset(); switchTab('challenge'); }
+    );
+    return;
+  }
+
   overlay('阵地失守', `你在第${S.level}关第${S.wave}波倒下。<br>骑马单位虽可重生，心一旦失守便无可挽回。`, '再来一局', reset);
 }
 
 function win() {
   S.phase = 'over';
   $('shop').classList.add('hidden'); $('battleBar').classList.add('hidden');
+  // 通关日常任务
+  DailyMgr.addProgress('pass_level', 1);
   overlay('通关！', '30关全清，你玩不过我吧！<br>汉字成阵，西游归位，骑兵踏破千山。', '再玩一遍', reset);
 }
 
@@ -1313,41 +1953,45 @@ function draw() {
     ctx.save();
     ctx.translate(c.px, c.py);
     
-    const cw = s * 1.15;  // 格子宽度（稍宽，卡牌风格）
-    const ch = s * 0.9;   // 格子高度（稍矮，卡牌风格）
-    const cr = 6;         // 圆角
+    const cw = s * 0.95;  // 格子宽度（正方形）
+    const ch = s * 0.95;  // 格子高度（正方形）
+    const cr = 3;         // 小圆角
     
-    // 格子阴影
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    roundRect(-cw/2 + 3, -ch/2 + 3, cw, ch, cr);
-    ctx.fill();
+    // 空格子背景（浅黄+加号）
+    if (!u) {
+      ctx.fillStyle = '#f2dfa8';
+      roundRect(-cw/2, -ch/2, cw, ch, cr);
+      ctx.fill();
+      
+      // 细边框
+      ctx.strokeStyle = '#d4b87a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // 加号
+      ctx.fillStyle = '#b89560';
+      ctx.font = `900 ${s*0.4}px "PingFang SC",sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('+', 0, 0);
+    } else {
+      // 有单位的格子：白色背景
+      ctx.fillStyle = '#fffbf0';
+      roundRect(-cw/2, -ch/2, cw, ch, cr);
+      ctx.fill();
+      
+      // 边框
+      ctx.strokeStyle = '#c9a878';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     
-    // 格子背景
-    roundRect(-cw/2, -ch/2, cw, ch, cr);
-    ctx.fillStyle = u ? '#fff8e8' : '#f5ecd4';
-    ctx.fill();
-    
-    // 木纹边框
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = u ? '#c49a48' : '#c9a878';
-    ctx.stroke();
-    
-    // 内边框（装饰线）
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = u ? 'rgba(196,154,72,0.4)' : 'rgba(201,168,120,0.5)';
-    roundRect(-cw/2 + 4, -ch/2 + 4, cw - 8, ch - 8, cr - 2);
-    ctx.stroke();
-    
-    // 单位combo发光效果
+    // 组合单位金色外框
     if (u && u.combo) {
       const comboColor = COMBO_INFO[UNITS[u.ch].combo].color;
-      ctx.shadowColor = comboColor;
-      ctx.shadowBlur = 15 + Math.sin(S.time * 3) * 5;
-      ctx.lineWidth = 3;
       ctx.strokeStyle = comboColor;
-      roundRect(-cw/2, -ch/2, cw, ch, cr);
+      ctx.lineWidth = 3;
+      roundRect(-cw/2 - 1, -ch/2 - 1, cw + 2, ch + 2, cr + 1);
       ctx.stroke();
-      ctx.shadowBlur = 0;
     }
 
     // ===== 特殊格子标记 =====
@@ -1379,7 +2023,7 @@ function draw() {
         ctx.strokeStyle = '#ffdd44';
         ctx.lineWidth = 3;
         ctx.globalAlpha = 0.5 + Math.sin(S.time * 5) * 0.3;
-        roundRect(-s/2-4, -s/2-4, s+8, s+8, 12);
+        roundRect(-cw/2 - 3, -ch/2 - 3, cw + 6, ch + 6, cr + 2);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
@@ -1392,16 +2036,11 @@ function draw() {
         const d = UNITS[u.ch];
         if (d && d.atk > 0) {
           ctx.strokeStyle = '#aaddff';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 2;
           ctx.globalAlpha = 0.4 + Math.sin(S.time * 6) * 0.3;
-          ctx.beginPath();
-          ctx.arc(0, 0, s * 0.48, 0, Math.PI * 2);
+          roundRect(-cw/2 - 2, -ch/2 - 2, cw + 4, ch + 4, cr + 1);
           ctx.stroke();
           ctx.globalAlpha = 1;
-          ctx.fillStyle = '#aaddff';
-          ctx.font = `700 ${s*0.14}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.fillText('✨', 0, -s*0.38);
         }
       }
     }
@@ -1410,7 +2049,7 @@ function draw() {
     if (S.phase==='shop' && S.selCard>=0 && (!u || u.ch===S.cards[S.selCard].ch)) {
       ctx.strokeStyle='#f4c95d'; ctx.lineWidth=3;
       ctx.setLineDash([6,5]); ctx.lineDashOffset=-S.time*30;
-      roundRect(-s/2-3,-s/2-3,s+6,s+6,12); ctx.stroke(); ctx.setLineDash([]);
+      roundRect(-cw/2 - 3, -ch/2 - 3, cw + 6, ch + 6, cr + 2); ctx.stroke(); ctx.setLineDash([]);
     }
 
     // ===== 悬停预览：攻击范围 =====
@@ -1437,81 +2076,51 @@ function draw() {
         ctx.globalAlpha=1;
       }
       
-      // 等级角标（左上角）
+      // 等级数字（左上角小数字）
       const lv = u.lv || 1;
-      const lvSize = s * 0.28;
-      ctx.fillStyle = u.combo ? COMBO_INFO[UNITS[u.ch].combo].color : '#e74c3c';
-      ctx.beginPath();
-      ctx.moveTo(-cw/2, -ch/2);
-      ctx.lineTo(-cw/2 + lvSize * 1.6, -ch/2);
-      ctx.lineTo(-cw/2, -ch/2 + lvSize * 1.6);
-      ctx.closePath();
-      ctx.fill();
+      if (lv > 1 || u.combo) {
+        ctx.fillStyle = u.combo ? COMBO_INFO[UNITS[u.ch].combo].color : '#e74c3c';
+        ctx.font = `900 ${s*0.2}px "PingFang SC",sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(lv, -cw/2 + 3, -ch/2 + 1);
+      }
       
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      
-      ctx.fillStyle = '#fff';
-      ctx.font = `900 ${s*0.2}px "PingFang SC",sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(lv, -cw/2 + 4, -ch/2 + 2);
-      
-      // 单位大字名字（居中）
+      // 单位大字名字（居中，黑色书法体，组合单位用组合色）
       const d = UNITS[u.ch];
       const displayName = d.name || u.ch;
-      ctx.fillStyle = d.color || '#2a2118';
-      ctx.font = `900 ${s*0.5}px "PingFang SC","STKaiti","KaiTi",serif`;
+      let textColor = d.color || '#2a2118';
+      if (u.combo) {
+        const comboName = UNITS[u.ch].combo;
+        if (comboName === '悟空') textColor = '#2a1a0a';
+        else if (comboName === '八戒') textColor = '#3a8a4a';
+        else if (comboName === '唐僧') textColor = '#d46a2a';
+        else if (comboName === '沙僧') textColor = '#6a5ad0';
+        else textColor = COMBO_INFO[comboName].color;
+      }
+      ctx.fillStyle = textColor;
+      ctx.font = `900 ${s*0.45}px "STKaiti","KaiTi","楷体","PingFang SC",serif`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(displayName, 0, -s*0.02);
+      ctx.fillText(displayName, 0, -s*0.05);
       
-      // 名字描边
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 2;
-      ctx.strokeText(displayName, 0, -s*0.02);
-      
-      // 血条
-      const hpw = cw * 0.7;
-      const ratio = Math.max(0, u.hp / unitMaxHp(u));
-      const hpY = ch / 2 - 10;
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(-hpw/2, hpY, hpw, 6);
-      ctx.fillStyle = ratio > 0.4 ? '#4fc07a' : (ratio > 0.2 ? '#f4c95d' : '#e05a5a');
-      ctx.fillRect(-hpw/2, hpY, hpw * ratio, 6);
-      // 血条边框
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-hpw/2, hpY, hpw, 6);
-
-      // 镜魂充能进度条（仅可生成镜像的兵种显示）
-      if (canMirrorUnit(u) && u.charge > 0) {
+      // 充能条（底部绿色细条，仅可充能兵种显示）
+      if (canMirrorUnit(u)) {
         const chRatio = u.charge / (u.maxCharge || MIRROR_CHARGE_MAX);
-        const chY = hpY + 8;
-        const chw = cw * 0.6;
-        // 背景
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.fillRect(-chw/2, chY, chw, 3);
-        // 充能颜色：绿→黄→红
-        let chColor;
-        if (chRatio < 0.4) chColor = '#4ade80';
-        else if (chRatio < 0.7) chColor = '#f4c95d';
-        else chColor = '#ff6a4a';
-        // 充能接近满时闪烁
-        if (chRatio > 0.85) {
+        const chw = cw - 4;
+        const chh = 4;
+        const chY = ch/2 - chh - 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.fillRect(-chw/2, chY, chw, chh);
+        let chColor = '#4ade80';
+        if (chRatio > 0.7) chColor = '#5dd27a';
+        if (chRatio > 0.9) chColor = '#7dd0ff';
+        if (chRatio >= 1) {
           ctx.shadowColor = chColor;
-          ctx.shadowBlur = 6 + Math.sin(S.time * 8) * 3;
+          ctx.shadowBlur = 4 + Math.sin(S.time * 8) * 2;
         }
         ctx.fillStyle = chColor;
-        ctx.fillRect(-chw/2, chY, chw * chRatio, 3);
+        ctx.fillRect(-chw/2, chY, chw * chRatio, chh);
         ctx.shadowBlur = 0;
-        // 镜魂标识
-        if (chRatio > 0.85) {
-          ctx.font = `${s*0.15}px serif`;
-          ctx.textAlign = 'center';
-          ctx.fillStyle = 'rgba(255, 200, 100, ' + (0.6 + Math.sin(S.time*6)*0.3) + ')';
-          ctx.fillText('✨', 0, chY - 6);
-        }
       }
       // 可充能兵种标识（右上角小图标，提示玩家此单位可生成镜像）
       if (canMirrorUnit(u)) {
@@ -1557,32 +2166,72 @@ function draw() {
     }
     ctx.restore();
   }
-  // 组词连线
+  // 组合单位连线（微光效果）
   for (let i=0;i<S.cells.length;i++) {
     const c=S.cells[i];
     if (c.unit&&c.unit.combo&&c.unit.partner>i) {
       const p=S.cells[c.unit.partner];
-      ctx.strokeStyle=COMBO_INFO[UNITS[c.unit.ch].combo].color;
-      ctx.lineWidth=3; ctx.globalAlpha=0.65+Math.sin(S.time*5)*0.25;
+      const comboColor = COMBO_INFO[UNITS[c.unit.ch].combo].color;
+      ctx.strokeStyle = comboColor;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.4 + Math.sin(S.time*4)*0.2;
       ctx.beginPath(); ctx.moveTo(c.px,c.py); ctx.lineTo(p.px,p.py); ctx.stroke();
-      ctx.globalAlpha=1;
+      ctx.globalAlpha = 1;
     }
   }
 
-  // 心
+  // 心（基地血量）- 红色心形 + 血量数字
   const pulse = 1+Math.sin(S.time*3.2)*0.05;
-  const hr = (S.chapter===1?s*0.4:s*0.34)*pulse;
-  ctx.save(); ctx.translate(S.heartX,S.heartY);
-  ctx.shadowColor='#ff5a6a'; ctx.shadowBlur=22;
-  ctx.fillStyle='#e8404f';
-  ctx.beginPath(); ctx.arc(0,0,hr,0,Math.PI*2); ctx.fill();
-  ctx.shadowBlur=0;
-  ctx.fillStyle='#fff'; ctx.font=`900 ${hr*1.1}px "PingFang SC",sans-serif`;
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('心',0,1);
-  const bw=hr*2.4, rr=Math.max(0,S.heartHp/S.heartMax);
-  ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(-bw/2,hr+6,bw,5);
-  ctx.fillStyle='#ff6a7a'; ctx.fillRect(-bw/2,hr+6,bw*rr,5);
+  const heartScale = S.heartScale || 1;
+  const heartSize = s * 0.35 * pulse * heartScale;
+  ctx.save(); ctx.translate(S.heartX, S.heartY);
+  
+  function drawHeart(cx, cy, size) {
+    ctx.beginPath();
+    const topCurve = size * 0.4;
+    ctx.moveTo(cx, cy + size * 0.5);
+    ctx.bezierCurveTo(cx + size, cy, cx + size * 0.5, cy - size * 0.9, cx, cy - topCurve);
+    ctx.bezierCurveTo(cx - size * 0.5, cy - size * 0.9, cx - size, cy, cx, cy + size * 0.5);
+    ctx.closePath();
+  }
+  
+  ctx.shadowColor = '#ff5a6a';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#e8404f';
+  drawHeart(0, 0, heartSize);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  
+  // 心高光
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  drawHeart(-heartSize * 0.15, -heartSize * 0.15, heartSize * 0.35);
+  ctx.fill();
+  
+  // 血量数字
+  ctx.fillStyle = '#fff';
+  ctx.font = `900 ${heartSize * 0.7}px "PingFang SC",sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(150,20,30,0.9)';
+  ctx.lineWidth = 3;
+  ctx.strokeText(S.heartHp, heartSize * 0.8, heartSize * 0.1);
+  ctx.fillText(S.heartHp, heartSize * 0.8, heartSize * 0.1);
+  
+  // 基地血条（在心形下方）
+  const heartRatio = Math.max(0, S.heartHp / S.heartMax);
+  const hpBarW = heartSize * 2;
+  const hpBarH = Math.max(5, heartSize * 0.18);
+  const hpBarY = heartSize * 0.75;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  roundRect(-hpBarW/2, hpBarY, hpBarW, hpBarH, hpBarH/2);
+  ctx.fill();
+  let hpColor = '#5dd27a';
+  if (heartRatio < 0.3) hpColor = '#e05a5a';
+  else if (heartRatio < 0.6) hpColor = '#f4c95d';
+  ctx.fillStyle = hpColor;
+  roundRect(-hpBarW/2, hpBarY, hpBarW * heartRatio, hpBarH, hpBarH/2);
+  ctx.fill();
+  
   ctx.restore();
 
   // 敌人
@@ -1931,60 +2580,49 @@ function roundRect(x,y,w,h,r){
 
 /* ============ 中国风云雾渲染 ============ */
 function drawClouds() {
-  const cloudAlpha = 0.25 + Math.sin(S.time * 0.3) * 0.08;
-  const cloudSpeed = 0.3;
+  const cloudAlpha = 0.5 + Math.sin(S.time * 0.2) * 0.1;
+  const cloudSpeed = 0.2;
   
   const clouds = [
-    { x: (S.time * cloudSpeed * 20 + W * 0.1) % (W * 1.2), y: H * 0.08, s: 0.8 },
-    { x: (S.time * cloudSpeed * 15 + W * 0.5) % (W * 1.2), y: H * 0.12, s: 1.2 },
-    { x: (S.time * cloudSpeed * 25 + W * 0.8) % (W * 1.2), y: H * 0.05, s: 0.6 },
-    { x: (S.time * cloudSpeed * 18 + W * 0.3) % (W * 1.2), y: H * 0.92, s: 0.9 },
-    { x: (S.time * cloudSpeed * 22 + W * 0.7) % (W * 1.2), y: H * 0.88, s: 1.0 },
+    { x: (S.time * cloudSpeed * 15 + W * 0.15) % (W * 1.2) - W * 0.1, y: H * 0.15, s: 1.0 },
+    { x: (S.time * cloudSpeed * 12 + W * 0.55) % (W * 1.2) - W * 0.1, y: H * 0.7, s: 1.3 },
+    { x: (S.time * cloudSpeed * 18 + W * 0.85) % (W * 1.2) - W * 0.1, y: H * 0.08, s: 0.7 },
   ];
   
   ctx.fillStyle = `rgba(255,255,255,${cloudAlpha})`;
   clouds.forEach(c => {
     ctx.beginPath();
-    ctx.arc(c.x, c.y, 40 * c.s, 0, Math.PI * 2);
-    ctx.arc(c.x + 30 * c.s, c.y - 10 * c.s, 35 * c.s, 0, Math.PI * 2);
-    ctx.arc(c.x + 50 * c.s, c.y, 30 * c.s, 0, Math.PI * 2);
-    ctx.arc(c.x + 20 * c.s, c.y + 10 * c.s, 25 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, 30 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 28 * c.s, c.y - 8 * c.s, 28 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 50 * c.s, c.y, 24 * c.s, 0, Math.PI * 2);
+    ctx.arc(c.x + 20 * c.s, c.y + 10 * c.s, 22 * c.s, 0, Math.PI * 2);
     ctx.fill();
   });
 }
 
-/* ============ 中国风建筑渲染 ============ */
+/* ============ 建筑渲染 - 扁平风格 ============ */
 function drawBuildings() {
-  const topH = H * 0.18;
-  const botH = H * 0.16;
+  const wallY = H * 0.22;
+  const groundY = H * 0.7;
+  const wallColor = '#d8b888';
+  const wallDark = '#b89868';
+  const wallLight = '#e8c898';
   
   ctx.save();
   
   // ===== 顶部城墙 =====
-  const wallColor = '#c9a878';
-  const wallDark = '#a08050';
-  const wallLight = '#d8b888';
-  
-  // 城墙主体
   ctx.fillStyle = wallColor;
-  ctx.fillRect(0, topH - 40, W, 40);
+  ctx.fillRect(0, wallY - 35, W, 35);
   
-  // 城墙底座阴影
+  // 城墙暗边
   ctx.fillStyle = wallDark;
-  ctx.fillRect(0, topH - 8, W, 8);
+  ctx.fillRect(0, wallY - 5, W, 5);
   
-  // 城垛（锯齿状）
-  ctx.fillStyle = wallColor;
-  const merlons = Math.floor(W / 40);
-  for (let i = 0; i < merlons; i++) {
-    ctx.fillRect(i * 40 + 5, topH - 55, 20, 15);
-  }
-  
-  // 城墙纹理（横线）
+  // 城墙纹理横线
   ctx.strokeStyle = wallDark;
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.4;
-  for (let y = topH - 35; y < topH - 5; y += 10) {
+  ctx.globalAlpha = 0.3;
+  for (let y = wallY - 28; y < wallY - 6; y += 8) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
@@ -1992,176 +2630,127 @@ function drawBuildings() {
   }
   ctx.globalAlpha = 1;
   
-  // ===== 左侧城楼 =====
-  const towerW = 70;
-  const towerX = 20;
-  const towerTop = topH - 90;
-  
-  // 城楼主体
-  ctx.fillStyle = wallLight;
-  ctx.fillRect(towerX, towerTop, towerW, 50);
-  ctx.strokeStyle = wallDark;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(towerX, towerTop, towerW, 50);
-  
-  // 城楼屋顶（飞檐）
-  ctx.fillStyle = '#7a4a2a';
-  ctx.beginPath();
-  ctx.moveTo(towerX - 10, towerTop);
-  ctx.lineTo(towerX + towerW / 2, towerTop - 25);
-  ctx.lineTo(towerX + towerW + 10, towerTop);
-  ctx.closePath();
-  ctx.fill();
-  
-  // 屋顶瓦片
-  ctx.strokeStyle = '#5a3a1a';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 5; i++) {
-    const tx = towerX + 5 + i * 14;
-    ctx.beginPath();
-    ctx.moveTo(tx, towerTop - 2);
-    ctx.lineTo(tx + 5, towerTop - 15);
-    ctx.stroke();
+  // 城垛
+  ctx.fillStyle = wallColor;
+  const merlonW = 36;
+  const merlons = Math.ceil(W / merlonW);
+  for (let i = 0; i < merlons; i++) {
+    ctx.fillRect(i * merlonW + 4, wallY - 50, 18, 15);
   }
   
-  // 城楼门
-  ctx.fillStyle = '#5a3a1a';
-  ctx.fillRect(towerX + 25, towerTop + 20, 20, 30);
-  ctx.beginPath();
-  ctx.arc(towerX + 35, towerTop + 20, 10, Math.PI, 0);
-  ctx.fill();
-  
-  // ===== 右侧城楼 =====
-  const towerX2 = W - 20 - towerW;
-  ctx.fillStyle = wallLight;
-  ctx.fillRect(towerX2, towerTop, towerW, 50);
-  ctx.strokeStyle = wallDark;
-  ctx.strokeRect(towerX2, towerTop, towerW, 50);
-  
-  ctx.fillStyle = '#7a4a2a';
-  ctx.beginPath();
-  ctx.moveTo(towerX2 - 10, towerTop);
-  ctx.lineTo(towerX2 + towerW / 2, towerTop - 25);
-  ctx.lineTo(towerX2 + towerW + 10, towerTop);
-  ctx.closePath();
-  ctx.fill();
-  
-  for (let i = 0; i < 5; i++) {
-    const tx = towerX2 + 5 + i * 14;
-    ctx.beginPath();
-    ctx.moveTo(tx, towerTop - 2);
-    ctx.lineTo(tx + 5, towerTop - 15);
-    ctx.stroke();
+  // 城垛暗色边
+  ctx.fillStyle = wallDark;
+  for (let i = 0; i < merlons; i++) {
+    ctx.fillRect(i * merlonW + 4, wallY - 38, 18, 3);
   }
-  
-  ctx.fillStyle = '#5a3a1a';
-  ctx.fillRect(towerX2 + 25, towerTop + 20, 20, 30);
-  ctx.beginPath();
-  ctx.arc(towerX2 + 35, towerTop + 20, 10, Math.PI, 0);
-  ctx.fill();
-  
-  // ===== 旗帜 =====
-  const flagColors = ['#c9483c', '#c9483c', '#c9483c', '#c9483c', '#c9483c'];
-  const flagPositions = [
-    { x: towerX + towerW / 2, y: towerTop - 35 },
-    { x: W * 0.25, y: topH - 60 },
-    { x: W * 0.5, y: topH - 65 },
-    { x: W * 0.75, y: topH - 60 },
-    { x: towerX2 + towerW / 2, y: towerTop - 35 },
-  ];
-  
-  flagPositions.forEach((pos, idx) => {
-    // 旗杆
-    ctx.strokeStyle = '#5a3a1a';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.lineTo(pos.x, pos.y - 30);
-    ctx.stroke();
-    
-    // 旗杆顶
-    ctx.fillStyle = '#c9a82e';
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y - 32, 4, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // 旗帜（飘动）
-    const flagWave = Math.sin(S.time * 2.5 + idx) * 5;
-    const flagWave2 = Math.sin(S.time * 3 + idx * 0.8) * 3;
-    ctx.fillStyle = flagColors[idx];
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y - 30);
-    ctx.lineTo(pos.x + 25 + flagWave, pos.y - 24 + flagWave2);
-    ctx.lineTo(pos.x + 18 + flagWave, pos.y - 15);
-    ctx.lineTo(pos.x + 28 + flagWave, pos.y - 8 + flagWave2);
-    ctx.lineTo(pos.x, pos.y - 2);
-    ctx.closePath();
-    ctx.fill();
-    
-    // 旗帜边缘暗纹
-    ctx.strokeStyle = '#8a2820';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  });
   
   // ===== 底部城墙 =====
-  const botWallY = H - botH + 10;
+  const botWallTop = groundY - 10;
+  const botWallH = H * 0.1;
   
   ctx.fillStyle = wallColor;
-  ctx.fillRect(0, botWallY, W, botH - 10);
+  ctx.fillRect(0, botWallTop, W, botWallH);
   
   ctx.fillStyle = wallDark;
-  ctx.fillRect(0, botWallY, W, 6);
+  ctx.fillRect(0, botWallTop, W, 4);
+  
+  // 底部城墙横线
+  ctx.strokeStyle = wallDark;
+  ctx.globalAlpha = 0.3;
+  for (let y = botWallTop + 8; y < botWallTop + botWallH - 4; y += 8) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
   
   // 底部城垛
   ctx.fillStyle = wallColor;
   for (let i = 0; i < merlons; i++) {
-    ctx.fillRect(i * 40 + 5, botWallY - 12, 20, 12);
+    ctx.fillRect(i * merlonW + 4, botWallTop - 12, 18, 12);
+  }
+  ctx.fillStyle = wallDark;
+  for (let i = 0; i < merlons; i++) {
+    ctx.fillRect(i * merlonW + 4, botWallTop - 2, 18, 2);
   }
   
-  // 底部城门（中央）
-  const gateW = 100;
+  // ===== 中央城门 =====
+  const gateW = W * 0.22;
+  const gateH = botWallH * 1.3;
   const gateX = W / 2 - gateW / 2;
-  ctx.fillStyle = '#5a3a1a';
-  ctx.fillRect(gateX, botWallY + 10, gateW, botH - 20);
+  const gateY = botWallTop - gateH * 0.6;
+  
+  // 城门主体（深棕色）
+  ctx.fillStyle = '#6b4220';
   ctx.beginPath();
-  ctx.arc(W / 2, botWallY + 10, gateW / 2, Math.PI, 0);
+  ctx.moveTo(gateX, gateY + gateH);
+  ctx.lineTo(gateX, gateY + gateH * 0.4);
+  ctx.quadraticCurveTo(gateX + gateW / 2, gateY - gateH * 0.15, gateX + gateW, gateY + gateH * 0.4);
+  ctx.lineTo(gateX + gateW, gateY + gateH);
+  ctx.closePath();
   ctx.fill();
   
-  // 城门装饰
-  ctx.strokeStyle = '#c9a82e';
-  ctx.lineWidth = 2;
+  // 城门装饰弧线
+  ctx.strokeStyle = '#f4c95d';
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(W / 2, botWallY + 10, gateW / 2 - 8, Math.PI, 0);
+  ctx.moveTo(gateX + 8, gateY + gateH * 0.5);
+  ctx.quadraticCurveTo(W / 2, gateY + gateH * 0.05, gateX + gateW - 8, gateY + gateH * 0.5);
   ctx.stroke();
   
-  // 门钉
-  ctx.fillStyle = '#c9a82e';
+  // 城门门钉
+  ctx.fillStyle = '#f4c95d';
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < 5; col++) {
+      const nx = gateX + gateW * 0.18 + col * gateW * 0.16;
+      const ny = gateY + gateH * 0.55 + row * gateH * 0.22;
       ctx.beginPath();
-      ctx.arc(gateX + 15 + col * 17, botWallY + 30 + row * 20, 3, 0, Math.PI * 2);
+      ctx.arc(nx, ny, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
   
-  // 底部左右角楼
-  [20, W - 20 - 50].forEach(tx => {
-    ctx.fillStyle = wallLight;
-    ctx.fillRect(tx, botWallY - 35, 50, 35);
-    ctx.strokeStyle = wallDark;
-    ctx.strokeRect(tx, botWallY - 35, 50, 35);
-    
-    ctx.fillStyle = '#7a4a2a';
-    ctx.beginPath();
-    ctx.moveTo(tx - 8, botWallY - 35);
-    ctx.lineTo(tx + 25, botWallY - 55);
-    ctx.lineTo(tx + 58, botWallY - 35);
-    ctx.closePath();
-    ctx.fill();
-  });
+  // ===== 两侧小房子 =====
+  const houseW = 55;
+  const houseH = 65;
+  const roofH = 25;
+  const houseY = groundY - 18;
+  
+  // 左房子
+  drawHouse(60, houseY - houseH, houseW, houseH, roofH, wallLight, '#8b5a2b', wallDark);
+  
+  // 右房子
+  drawHouse(W - 60 - houseW, houseY - houseH, houseW, houseH, roofH, wallLight, '#8b5a2b', wallDark);
   
   ctx.restore();
+}
+
+function drawHouse(x, y, w, h, roofH, wallColor, roofColor, darkColor) {
+  // 房身
+  ctx.fillStyle = wallColor;
+  ctx.fillRect(x, y + roofH, w, h - roofH);
+  ctx.strokeStyle = darkColor;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y + roofH, w, h - roofH);
+  
+  // 屋顶（三角形）
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y + roofH);
+  ctx.lineTo(x + w / 2, y);
+  ctx.lineTo(x + w + 8, y + roofH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#5a3818';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  
+  // 门
+  ctx.fillStyle = '#5a3818';
+  const doorW = w * 0.4;
+  const doorH = (h - roofH) * 0.55;
+  ctx.fillRect(x + w / 2 - doorW / 2, y + h - doorH, doorW, doorH);
 }
 
 /* ============ 主循环 ============ */
@@ -2174,6 +2763,10 @@ function loop(ts){
   S.fx.forEach(f=>f.t+=dt);S.fx=S.fx.filter(f=>f.t<(f.dur||0.35));
   S.floats.forEach(f=>f.t+=dt);S.floats=S.floats.filter(f=>f.t<(f.big?1.4:0.8));
   syncTop();draw();
+  // 无尽模式HUD每秒更新（用time节流）
+  if (EndlessMgr.isActive() && Math.floor(S.time) !== Math.floor(S.time - dt)) {
+    updateEndlessHUD();
+  }
   if(rafOk) requestAnimationFrame(loop);
 }
 
@@ -2190,6 +2783,8 @@ function startLoop(){
 /* ============ 初始化 ============ */
 function reset() {
   const lv0 = LEVELS[0];
+  // 隐藏无尽模式HUD（普通模式不需要）
+  $('endlessHud')?.classList.add('hidden');
   S.level = 1; S.chapter = 1; S.wave = 1;
   S.gold = 12;
   S.heartMax = 100; S.heartHp = 100;
@@ -2248,13 +2843,15 @@ function relocateRidersForNewLevel() {
  *  装备系统 UI
  * ============================================================ */
 
-/* 渲染武器卡片 */
+/* 渲染武器卡片 - 交错层叠布局 */
 function renderEquipGrid() {
   const grid = $('equipGrid');
   if (!grid) return;
-  grid.innerHTML = '';
 
-  WEAPONS.forEach(w => {
+  const cols = grid.querySelectorAll('.equip-col');
+  cols.forEach(c => c.innerHTML = '');
+
+  WEAPONS.forEach((w, idx) => {
     const save = SaveMgr.get();
     const unlocked = isWeaponUnlocked(w, save);
     const lv = save.weapons[w.id]?.level || (unlocked ? 1 : 0);
@@ -2265,29 +2862,13 @@ function renderEquipGrid() {
     card.className = 'weapon-card quality-' + w.quality + (unlocked ? '' : ' locked');
     card.dataset.weaponId = w.id;
 
-    // 显示大字
     let bigText = w.ch;
     if (w.type === 'combo') {
-      // 组合武器：显示组合名（如悟空）
       bigText = w.name;
     } else if (w.type === 'fun') {
       bigText = w.unitType || w.name;
     } else if (w.type === 'beast') {
       bigText = w.name;
-    }
-
-    // 攻击力显示
-    let atkVal = 0;
-    if (w.type === 'combo' && w.comboKey) {
-      // 组合武器找基础攻击
-      const baseUnit = Object.values(UNITS).find(u => u.combo === w.comboKey);
-      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
-    } else if (w.type === 'fun') {
-      const baseUnit = UNITS[w.unitType];
-      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
-    } else {
-      const baseUnit = UNITS[w.ch];
-      atkVal = baseUnit ? Math.round(baseUnit.atk * (1 + (lv - 1) * QUALITY[w.quality].atkPerLv)) : 0;
     }
 
     card.innerHTML = `
@@ -2309,6 +2890,7 @@ function renderEquipGrid() {
           }
         } else if (w.unlock?.type === 'weapon') {
           const hasBase = SaveMgr.get().unlockedWeapons?.includes(w.unlock.weaponId);
+          const baseName = WEAPONS.find(x => x.id === w.unlock.weaponId)?.name || '前置武器';
           if (hasBase) {
             if (SaveMgr.spendDiamond(w.unlock.costDiamond)) {
               SaveMgr.unlockWeapon(w.id);
@@ -2319,10 +2901,14 @@ function renderEquipGrid() {
               toast('钻石不足！');
             }
           } else {
-            toast('需先解锁前置武器！');
+            toast(`需先解锁：${baseName}`);
           }
+        } else if (w.unlock?.type === 'chapter') {
+          toast(`第${w.unlock.chapter}章自动解锁`);
+        } else if (w.unlock?.type === 'start') {
+          toast('初始武器');
         } else {
-          toast('未解锁');
+          toast('通关解锁');
         }
         return;
       }
@@ -2340,7 +2926,8 @@ function renderEquipGrid() {
       }
     });
 
-    grid.appendChild(card);
+    const colIdx = idx % 4;
+    cols[colIdx].appendChild(card);
   });
 }
 
@@ -2437,6 +3024,9 @@ function switchTab(tabName) {
   } else if (tabName === 'talent') {
     $('talentView').classList.add('active');
     renderTalents();
+  } else if (tabName === 'challenge') {
+    $('challengeView').classList.add('active');
+    if (typeof renderDailyPanel === 'function') renderDailyPanel();
   }
   updateAllResourceUI();
 }
@@ -2464,6 +3054,10 @@ function updateAllResourceUI() {
   // 天赋界面
   const taGold = $('taGold'); if (taGold) taGold.textContent = goldStr;
   const taDia = $('taDiamond'); if (taDia) taDia.textContent = diaStr;
+
+  // 挑战界面
+  const chGold = $('chGold'); if (chGold) chGold.textContent = goldStr;
+  const chDia = $('chDiamond'); if (chDia) chDia.textContent = diaStr;
 
   // 战斗界面（顶部金币从存档读，战斗内金币另算）
   const tbG = $('tbGold');
@@ -2506,6 +3100,9 @@ function claimVictory(isDouble) {
   // 记录最高波次/章节
   SaveMgr.setHighestWave(Math.max(S.bestWave || 0, S.wave));
   SaveMgr.setHighestChapter(Math.max(SaveMgr.get().highestChapter || 1, S.level));
+
+  // 日常挑战：通关关卡
+  DailyMgr.addProgress('pass_level', 1);
 
   toast(`获得 ${g}💰 ${d}💎`);
   $('victoryOverlay').classList.add('hidden');
@@ -2551,6 +3148,80 @@ function initGameUI() {
   const tdp = $('btnTaDiaPlus'); if (tdp) tdp.addEventListener('click', () => {
     SaveMgr.addDiamond(100); updateAllResourceUI(); renderTalents(); toast('+100 💎');
   });
+  const cgp = $('btnChGoldPlus'); if (cgp) cgp.addEventListener('click', () => {
+    SaveMgr.addGold(10000); updateAllResourceUI(); toast('+10000 💰');
+  });
+  const cdp = $('btnChDiaPlus'); if (cdp) cdp.addEventListener('click', () => {
+    SaveMgr.addDiamond(100); updateAllResourceUI(); renderDailyPanel(); toast('+100 💎');
+  });
+  // 无尽模式退出按钮
+  const eEnd = $('btnEndEndless'); if (eEnd) eEnd.addEventListener('click', () => {
+    if (!EndlessMgr.isActive()) return;
+    if (!confirm('确定退出无尽模式？本次进度将被记录到排行榜。')) return;
+    const info = EndlessMgr.getSessionInfo();
+    EndlessMgr.endSession();
+    $('endlessHud').classList.add('hidden');
+    toast(`♾️ 无尽模式结束：第${info.wave}波 | 击杀${info.kills}`);
+    reset();
+    switchTab('challenge');
+  });
+}
+
+/* ============================================================
+ *  无尽模式入口
+ * ============================================================ */
+function startEndlessMode() {
+  // 启动无尽会话
+  EndlessMgr.startSession();
+  // 重置游戏状态到第1章第1关的布局（用作战斗场地）
+  S.level = 1; S.chapter = 1; S.wave = 0; // wave会在 startWave 中递增到1
+  S.gold = 15;
+  S.heartMax = 120; S.heartHp = 120; // 无尽模式初始血量略高
+  S.enemies = []; S.shots = []; S.floats = []; S.fx = [];
+  S.cells = []; S.selCard = -1; S.selCell = -1; S.hoverCell = -1; S.dragging = -1;
+  S.riders = [];
+  // 解锁全部基础兵种供无尽模式使用
+  S.unlockedTypes = ['箭','切','盾','速','疗','退','神','豪','娥','爆','雷','冰','火','毒','奶','弓','炮','刺','甲','锤','枪','唐','僧','悟','空','八','戒','沙','姜','牙','申','豹','吒'];
+  S.speed = 1;
+  hideInfo();
+  buildLayout();
+  spawnDefaultRider();
+  applyTalentHeartBonus();
+  // 切换到战斗界面
+  switchTab('battle');
+  // 显示无尽模式HUD
+  $('endlessHud').classList.remove('hidden');
+  // 显示横幅
+  showLevelBanner({ id: '♾️', layout: 'lv1_grid_3x3_a', rule: { text: '无尽模式启动！每5波出现BOSS，挑战极限！' } });
+  // 进入商店准备
+  toShop();
+  $('hint').textContent = '♾️ 无尽模式 | 心血不会回复，每波清场+10心血 | 点击「开战」开始第1波';
+  updateEndlessHUD();
+}
+
+/* 退出无尽模式（直接结束，不记录到排行榜） */
+function exitEndlessMode() {
+  if (!EndlessMgr.isActive()) return;
+  EndlessMgr.session.active = false;
+  $('endlessHud').classList.add('hidden');
+  reset();
+  switchTab('challenge');
+}
+
+/* 更新无尽模式HUD */
+function updateEndlessHUD() {
+  const hud = $('endlessHud');
+  if (!hud) return;
+  if (!EndlessMgr.isActive()) {
+    hud.classList.add('hidden');
+    return;
+  }
+  hud.classList.remove('hidden');
+  const info = EndlessMgr.getSessionInfo();
+  const ehWave = $('ehWave'); if (ehWave) ehWave.textContent = info.wave;
+  const ehKills = $('ehKills'); if (ehKills) ehKills.textContent = info.kills;
+  const ehBoss = $('ehBoss'); if (ehBoss) ehBoss.textContent = info.bossKills;
+  const ehTime = $('ehTime'); if (ehTime) ehTime.textContent = info.duration > 0 ? Math.floor(info.duration/60) + ':' + String(info.duration%60).padStart(2,'0') : '0:00';
 }
 
 ovAction = reset;

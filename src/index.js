@@ -1,0 +1,12 @@
+export { dist, dist2, clamp, lerp, rand, randInt, choice, weightedPick, roundRect, manhattan, sign, TAU } from './utils/math.js';
+export { SpatialGrid } from './utils/SpatialGrid.js';
+export { EventBus, bus } from './core/EventBus.js';
+export { GameState, GamePhase, game } from './core/GameState.js';
+export { buildLayoutCells, recomputeCombos, adjacent, findCellByGrid, buildCellIndex, neighborsOf, cellKey } from './core/Grid.js';
+export { UNITS, COMBO_INFO, COMBO_PAIRS, MIRROR_CHARGE_MAX, MIRROR_SPECIAL_TYPES, canMirrorUnit, makeUnit, unitMaxHp, effStat } from './config/units.js';
+export { CHAPTER_THEMES, getTheme, SPECIAL_CELL } from './config/themes.js';
+export { ENEMY_DEFS, generateWave, createEnemy, getRuleEffect } from './config/enemies.js';
+export { generateShopCards, getRerollCost, getCardCount } from './systems/ShopSystem.js';
+export { LEAK_DAMAGE_RATIO, findEnemyTarget, findNearestEnemy, findUnitTargetForEnemy, getReach, applyDamageToUnit, processUnitAttack } from './systems/BattleSystem.js';
+export { drawCell, drawUnitText, drawChargeBar, drawHeart, drawClouds, drawObstacle, drawFloatText } from './render/sprites.js';
+export { BattleRenderer } from './render/BattleRenderer.js';

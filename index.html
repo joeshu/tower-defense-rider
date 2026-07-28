@@ -41,6 +41,15 @@
       <span class="hp-text">基地满血</span>
     </button>
 
+    <!-- 无尽模式HUD -->
+    <div id="endlessHud" class="hidden">
+      <span class="eh-item eh-wave">♾️ 第<span id="ehWave">1</span>波</span>
+      <span class="eh-item eh-kills">💀 <span id="ehKills">0</span></span>
+      <span class="eh-item eh-boss">👑 <span id="ehBoss">0</span></span>
+      <span class="eh-item eh-time">⏱️ <span id="ehTime">0:00</span></span>
+      <button id="btnEndEndless" class="eh-end">退出</button>
+    </div>
+
     <!-- 章节进度条 -->
     <div id="chapterTrack">
       <span id="chapterName">黄风岭</span>
@@ -60,6 +69,12 @@
     <!-- 主画布 -->
     <canvas id="cv"></canvas>
 
+    <!-- 骑马战意条 + 主动技能 -->
+    <div id="rageContainer" class="hidden">
+      <div id="rageBarBg"><div id="rageBar"></div></div>
+      <div id="skillBtns"></div>
+    </div>
+
     <!-- 单位信息栏 -->
     <div id="infoBar" class="hidden">
       <span id="infoText"></span>
@@ -75,7 +90,7 @@
       </div>
       <div id="cards"></div>
       <div id="shopFoot">
-        <div id="hint">🐴 骑马单位永久在场，路过友军充能镜魂！点卡牌→点格子放置兵种</div>
+        <div id="hint">🐴 骑马巡视充能镜魂 | 速格+攻速 怒格+暴击 愈格+回心 | 点卡牌→点格子</div>
         <button id="btnFight">开 战 ⚔️</button>
       </div>
     </div>
@@ -104,7 +119,12 @@
       <span class="title-text">装 备</span>
       <span class="title-ornament right">⚜</span>
     </div>
-    <div class="equip-grid" id="equipGrid"></div>
+    <div class="equip-stacked" id="equipGrid">
+      <div class="equip-col" data-col="0"></div>
+      <div class="equip-col" data-col="1"></div>
+      <div class="equip-col" data-col="2"></div>
+      <div class="equip-col" data-col="3"></div>
+    </div>
   </div>
 
   <!-- ============ 天赋界面 ============ -->
@@ -125,6 +145,26 @@
       <span class="title-ornament right">⚜</span>
     </div>
     <div class="talent-container" id="talentContainer"></div>
+  </div>
+
+  <!-- ============ 挑战界面（日常 + 无尽 + 排行榜） ============ -->
+  <div id="challengeView" class="view">
+    <div class="view-topbar">
+      <div class="vt-left">
+        <span class="res-item gold-res">💰 <span id="chGold">0</span></span>
+        <span class="plus-btn" id="btnChGoldPlus">+</span>
+      </div>
+      <div class="vt-right">
+        <span class="res-item dia-res">💎 <span id="chDiamond">0</span></span>
+        <span class="plus-btn" id="btnChDiaPlus">+</span>
+      </div>
+    </div>
+    <div class="view-scroll-title">
+      <span class="title-ornament left">⚜</span>
+      <span class="title-text">挑 战</span>
+      <span class="title-ornament right">⚜</span>
+    </div>
+    <div class="challenge-container" id="dailyContainer"></div>
   </div>
 
   <!-- ============ 胜利结算弹窗 ============ -->
@@ -164,6 +204,10 @@
     <div class="tab-item" data-tab="talent">
       <span class="tab-icon">📜</span>
       <span class="tab-text">天赋</span>
+    </div>
+    <div class="tab-item" data-tab="challenge">
+      <span class="tab-icon">🏆</span>
+      <span class="tab-text">挑战</span>
     </div>
   </div>
 
